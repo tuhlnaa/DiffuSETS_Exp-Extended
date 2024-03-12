@@ -23,7 +23,7 @@ def find_power_of_ten(number):
     
 def generation_from_net(diffused_model: DDPMScheduler, net: ECGconditional, batch_size, device, text_embed, condition, dim=128):
     net.eval()
-    xi = torch.randn(batch_size, 4, dim)
+    xi = torch.randn(batch_size, 12, dim)
     xi = xi.to(device)
     timesteps = tqdm(diffused_model.timesteps)
     for _, i in enumerate(timesteps):
@@ -119,7 +119,7 @@ def batch_generate_ECG(nums,
         if verbose:
             print(condition)
 
-        latent = generation_from_net(diffused_model, net, batch_size=batch, device=device, text_embed=text_embed, condition=condition)
+        latent = generation_from_net(diffused_model, net, batch_size=batch, device=device, text_embed=text_embed, condition=condition, dim=1024)
         features_file_content.update({"Gen Latent": str(np.array(latent.cpu()).tolist())}) # 一个大小为(batch, 4, 1024 // 8)的向量
 
         if save_img:
@@ -129,7 +129,8 @@ def batch_generate_ECG(nums,
             plt.savefig(save_sample_path + 'Original ECG.png')
             plt.close()
 
-            gen_ecg = decoder(torch.Tensor(latent))
+            # (B, C, L) -> (B, L, C)
+            gen_ecg = latent.transpose(-1, -2)
             for j in range(batch):
                 output = gen_ecg[j]
 
@@ -154,7 +155,7 @@ def batch_generate_ECG(nums,
 if __name__ == "__main__":
     nums = 10 # 选用的mimic样本数
     batch = 4 #使用[每个样本对应的condition]生成的ECG个数
-    save_path = 'test_sample'
+    save_path = 'test_sample_novae'
     device_str = "cuda:6"
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
 
@@ -162,10 +163,10 @@ if __name__ == "__main__":
     mimic_test_data = VAE_MIMIC_IV_ECG_Dataset(path=mimic_path)
     mimic_test_dataloader = DataLoader(mimic_test_data, batch_size=1, shuffle=True)
 
-    n_channels = 4
+    n_channels = 12
     num_train_steps = 1000
     net = ECGconditional(num_train_steps, kernel_size=7, num_levels=5, n_channels=n_channels)
-    unet_path = './checkpoints/unet_1/unet_best.pth'
+    unet_path = './checkpoints/unet_2/unet_50.pth'
     net.load_state_dict(torch.load(unet_path, map_location=device))
     net = net.to(device)
 

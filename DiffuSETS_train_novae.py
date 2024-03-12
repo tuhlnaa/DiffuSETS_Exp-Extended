@@ -4,7 +4,8 @@ from torch.utils.data import DataLoader
 
 from diffusers import DDPMScheduler
 from unet.conditional_unet_patient_3 import ECGconditional
-from dataset.mimic_iv_ecg_dataset import VAE_MIMIC_IV_ECG_Dataset
+from dataset.ptbxl_dataset import PtbxlDataset_VAE
+from vae.vae_model import VAE_Decoder
 
 import time
 import sys
@@ -13,7 +14,20 @@ import pandas as pd
 import numpy as np
 import logging
 
-text_emb = pd.read_csv('/data/0shared/chenjiabo/DiffuSETS/data/mimic_iv_text_embed.csv')
+embedding_dict_ptbxl = pd.read_csv('/data/0shared/chenjiabo/DiffuSETS/data/ptbxl_database_embed.csv', low_memory=False)[['ecg_id', 'text_embed']]
+original_sheet = pd.read_csv('/data/0shared/laiyongfan/data_text2ecg/ptb-xl/ptbxl_database.csv', low_memory=False)
+embedding_dict_ptbxl = pd.merge(embedding_dict_ptbxl, original_sheet)
+
+def fetch_text_embedding_ptbxl(text:str):
+    text = text.split('|')[0]
+    text = text.replace('The report of the ECG is that ', '')
+    try:
+        text_embed = embedding_dict_ptbxl.loc[embedding_dict_ptbxl['report'] == text, 'text_embed'].values[0]
+        text_embed = eval(text_embed)
+    except IndexError:
+        text_embed = [0] * 1536
+    # print(text_embed)
+    return torch.tensor(text_embed)
 
 feature_vec = {
     'text': 1,
@@ -26,6 +40,7 @@ def train_epoch_channels(dataloader,
                          diffused_model: DDPMScheduler, 
                          optimizer, 
                          device, 
+                         decoder, 
                          number_of_repetition=1):
     loss_list = []
     net.train()
@@ -35,9 +50,6 @@ def train_epoch_channels(dataloader,
             # t: (batch_size, )
             # data = data.to(device)
             # label = label.to(device)
-            ecg = data
-            label['text']
-            label['gender']
             gender = []
             age = label['age']
             hr = label['hr']
@@ -73,33 +85,14 @@ def train_epoch_channels(dataloader,
                 hr = hr.to(device)
                 condition.update({'heart rate': hr})
 
-            text_embed = []
-            if feature_vec['text']:
-                for text in label['text']:
-                    input = ''
-                    for ch in text:
-                        if ch == '|':
-                            break
-                        input += ch
-                    # print(input)
-                    if len(input) >= 1 and input[-1] != '.':
-                        input += '.'
-                    if len(text_emb.loc[text_emb['text'] == input, 'embed']) > 0:
-                        emb = text_emb.loc[text_emb['text'] == input, 'embed'].values[0]
-                    else:
-                        emb = text_emb.iloc[-1]['embed']
-                    # print(emb)
-                    emb = eval(emb)
-                    # emb = np.repeat(text_embed[:, np.newaxis], 1, axis=1)
-                    # emb = torch.Tensor(emb)
-                    text_embed.append(emb)
+            texts = label['text']
+            texts = [fetch_text_embedding_ptbxl(x) for x in texts]
+            # (B, 1535) -> (B, 1, 1536)
+            text_embed = torch.stack(texts).unsqueeze(1)
 
-                text_embed = np.array(text_embed)
-                text_embed = np.repeat(text_embed[:, np.newaxis, :], 1, axis=1)
-            
-                text_embed = torch.Tensor(text_embed)
-
-            ecg = ecg.to(device)
+            data = data.to(device)
+            # (B, L, C) -> (B, C, L)
+            ecg = decoder(data).transpose(-1, -2)
             text_embed = text_embed.to(device)
 
             t = torch.randperm(diffused_model.config.num_train_timesteps-2)[:ecg.shape[0]] + 1 
@@ -155,32 +148,38 @@ if __name__ == "__main__":
     
     H_ = {
         'lr': 1e-5, 
-        'batch_size': 512, 
+        'batch_size': 64, 
         'epochs': 200, 
     }
     logger.info(H_)
 
-    vae_path = '/data/0shared/laiyongfan/data_text2ecg/mimic_vae'
-    n_channels = 4
+    PTB_VAE_PATH = '/data/0shared/laiyongfan/data_text2ecg/ptb-xl_vae'
+    n_channels = 12
     num_train_steps = 1000
     diffused_model = DDPMScheduler(num_train_timesteps=num_train_steps, beta_start=0.00085, beta_end=0.0120)
     
-    dataset = VAE_MIMIC_IV_ECG_Dataset(path=vae_path)
+    dataset = PtbxlDataset_VAE(path=PTB_VAE_PATH)
     
     net = ECGconditional(num_train_steps, kernel_size=7, num_levels=5, n_channels=n_channels)
     
-    device_str = "cuda:4"
+    device_str = "cuda:6"
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
     net = net.to(device)
     dataloader = DataLoader(dataset, batch_size=H_['batch_size'])
     optimizer = torch.optim.AdamW(params=net.parameters(), lr=H_['lr'])
-    min_loss = 10000
+    min_loss = 1000
+
+    decoder = VAE_Decoder()
+    vae_path = '/data/0shared/laiyongfan/data_text2ecg/models/vae_model.pth'
+    checkpoint = torch.load(vae_path, map_location=device)
+    decoder.load_state_dict(checkpoint['decoder'])
+    decoder = decoder.to(device)
 
     start_time = time.time()
 
     for i in range(1, H_['epochs'] + 1):
         s_t = time.time()
-        mean_loss = train_epoch_channels(dataloader, net, diffused_model, optimizer, device, number_of_repetition=1)
+        mean_loss = train_epoch_channels(dataloader, net, diffused_model, optimizer, device, decoder, number_of_repetition=1)
         logger.info(f'Epoch: {i}, mean loss: {mean_loss}')
         if (mean_loss < min_loss):
             min_loss = mean_loss
