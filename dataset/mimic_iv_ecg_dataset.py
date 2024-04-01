@@ -160,18 +160,36 @@ class VAE_MIMIC_IV_ECG_Dataset(Dataset):
         # data: (C, L) i.e. (4, 128)
         # label: dict contain keys of [text, subject_id, age, gender]
         return (latent_dict['data'], latent_dict['label'])
+    
+
+class DictDataset(Dataset):
+    def __init__(self, path:str):
+        self.data_dict = torch.load(path)
+        self.keys = list(self.data_dict.keys()) 
+
+    def __len__(self):
+        return len(self.data_dict) 
+    
+    def __getitem__(self, idx):
+        key = self.keys[idx] 
+        latent_dict = self.data_dict[key] 
+
+        return latent_dict['data'], latent_dict['label']
        
+
 if __name__ == '__main__':
     # Original dataset
-    # path = '/data1_science/1shared/physionet.org/files/mimic-iv-ecg/1.0/mimic-iv-ecg-diagnostic-electrocardiogram-matched-subset-1.0'
+    # path = '/data/0shared/MIMIC/physionet.org/files/mimic-iv-ecg/1.0/mimic-iv-ecg-diagnostic-electrocardiogram-matched-subset-1.0'
     # data = MIMIC_IV_ECG_Dataset(dataset_path=path, resample_length=1024, demo_label=True)
 
     # VAE encoded dataset 
-    vae_path = '/data/0shared/laiyongfan/data_text2ecg/mimic_vae'
-    data = VAE_MIMIC_IV_ECG_Dataset(vae_path, usage='test')
+    # vae_path = '/data/0shared/laiyongfan/data_text2ecg/mimic_vae_lite.pt'
+    vae_path = 'mimic_vae.pt'
+    # data = VAE_MIMIC_IV_ECG_Dataset(vae_path, usage='test')
+    data = DictDataset(vae_path)
 
     # print(len(data))
-    print(data[353][1])
+    print(data[397][1])
     # print(data[397][1])
 
     # print(type(data[0][1]['subject_id']))

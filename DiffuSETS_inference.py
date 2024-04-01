@@ -7,7 +7,7 @@ from tqdm import tqdm
 import pandas as pd
 import json
 import math
-from dataset.mimic_iv_ecg_dataset import VAE_MIMIC_IV_ECG_Dataset
+from dataset.mimic_iv_ecg_dataset import DictDataset
 from unet.conditional_unet_patient_3 import ECGconditional
 from torch.utils.data import DataLoader
 from diffusers import DDPMScheduler
@@ -54,7 +54,7 @@ def batch_generate_ECG(nums,
     if not save_img:
         print("Ignore image drawing and saving...")
 
-    embedding_dict_mimic= pd.read_csv('/data/0shared/chenjiabo/DiffuSETS/data/mimic_iv_text_embed.csv')
+    embedding_dict_mimic= pd.read_csv('./mimic_iv_text_embed.csv')
     for index, (x, y) in enumerate(test_dataloader):
         # input_ = x.squeeze(0).detach().numpy()
         # encoder_noise = torch.randn(latent_shape)
@@ -155,11 +155,11 @@ if __name__ == "__main__":
     nums = 10 # 选用的mimic样本数
     batch = 4 #使用[每个样本对应的condition]生成的ECG个数
     save_path = 'test_sample'
-    device_str = "cuda:6"
+    device_str = "cuda:2"
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
 
-    mimic_path = '/data/0shared/laiyongfan/data_text2ecg/mimic_vae'
-    mimic_test_data = VAE_MIMIC_IV_ECG_Dataset(path=mimic_path)
+    mimic_path = './mimic_vae.pt'
+    mimic_test_data = DictDataset(path=mimic_path)
     mimic_test_dataloader = DataLoader(mimic_test_data, batch_size=1, shuffle=True)
 
     n_channels = 4
@@ -173,7 +173,7 @@ if __name__ == "__main__":
     diffused_model.set_timesteps(1000)
 
     decoder = VAE_Decoder()
-    vae_path = '/data/0shared/laiyongfan/data_text2ecg/models/vae_model.pth'
+    vae_path = './checkpoints/vae_1/vae_model.pth'
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])
     decoder = decoder.to(device)

@@ -6,7 +6,7 @@ from dataset.mimic_iv_ecg_dataset import VAE_MIMIC_IV_ECG_Dataset
 
 def complete_patient_info(target_path: str):
     assert 'backup' not in target_path, f"Carefully check target path: {target_path} !"
-    patient_table_path = '/data1_science/1shared/physionet.org/files/mimiciv/2.2/hosp/patients.csv'
+    patient_table_path = '/data/0shared/MIMIC/mimic-iv-2.2/hosp/patients.csv'
     patient_table = pd.read_csv(patient_table_path, index_col='subject_id', low_memory=False)
 
     # note_table_path = '/data1_science/1shared/physionet.org/files/mimic-iv-note/2.2/note/discharge.csv'
@@ -46,8 +46,8 @@ def complete_patient_info(target_path: str):
         # torch.save(save_dict, os.path.join(target_path, f'{idx}.pt'))
 
     print(len(exculde_list))
-    with open('exclude_list.txt', 'w') as f:
-        f.writelines('\n'.join(list(map(str, exculde_list)))) 
+    # with open('exclude_list.txt', 'w') as f:
+    #     f.writelines('\n'.join(list(map(str, exculde_list)))) 
 
 if __name__ == '__main__':
     target_path = '/data/0shared/laiyongfan/data_text2ecg/mimic_vae'

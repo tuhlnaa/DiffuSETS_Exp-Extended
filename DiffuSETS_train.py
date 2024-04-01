@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 from diffusers import DDPMScheduler
 from unet.conditional_unet_patient_3 import ECGconditional
-from dataset.mimic_iv_ecg_dataset import VAE_MIMIC_IV_ECG_Dataset
+from dataset.mimic_iv_ecg_dataset import DictDataset
 
 import time
 import sys
@@ -13,7 +13,7 @@ import pandas as pd
 import numpy as np
 import logging
 
-text_emb = pd.read_csv('/data/0shared/chenjiabo/DiffuSETS/data/mimic_iv_text_embed.csv')
+text_emb = pd.read_csv('./mimic_iv_text_embed.csv')
 
 feature_vec = {
     'text': 1,
@@ -160,21 +160,24 @@ if __name__ == "__main__":
     }
     logger.info(H_)
 
-    vae_path = '/data/0shared/laiyongfan/data_text2ecg/mimic_vae'
+    # vae_path = '/data/0shared/laiyongfan/data_text2ecg/mimic_vae_lite.pt'
+    vae_path = 'mimic_vae.pt'
     n_channels = 4
     num_train_steps = 1000
     diffused_model = DDPMScheduler(num_train_timesteps=num_train_steps, beta_start=0.00085, beta_end=0.0120)
     
-    dataset = VAE_MIMIC_IV_ECG_Dataset(path=vae_path)
+    logger.info('Loading dataset...')
+    dataset = DictDataset(path=vae_path)
+    logger.info('Done!')
     
     net = ECGconditional(num_train_steps, kernel_size=7, num_levels=5, n_channels=n_channels)
     
-    device_str = "cuda:4"
+    device_str = "cuda:3"
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
     net = net.to(device)
     dataloader = DataLoader(dataset, batch_size=H_['batch_size'])
     optimizer = torch.optim.AdamW(params=net.parameters(), lr=H_['lr'])
-    min_loss = 10000
+    min_loss = 50
 
     start_time = time.time()
 
