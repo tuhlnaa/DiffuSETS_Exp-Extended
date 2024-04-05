@@ -152,20 +152,20 @@ def batch_generate_ECG(nums,
 
 
 if __name__ == "__main__":
-    nums = 10 # 选用的mimic样本数
+    nums = 5 # 选用的mimic样本数
     batch = 4 #使用[每个样本对应的condition]生成的ECG个数
     save_path = 'test_sample'
     device_str = "cuda:2"
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
 
-    mimic_path = './mimic_vae.pt'
+    mimic_path = './mimic_vae_lite.pt'
     mimic_test_data = DictDataset(path=mimic_path)
     mimic_test_dataloader = DataLoader(mimic_test_data, batch_size=1, shuffle=True)
 
     n_channels = 4
     num_train_steps = 1000
     net = ECGconditional(num_train_steps, kernel_size=7, num_levels=5, n_channels=n_channels)
-    unet_path = './checkpoints/unet_1/unet_best.pth'
+    unet_path = './checkpoints/unet_8/unet_best.pth'
     net.load_state_dict(torch.load(unet_path, map_location=device))
     net = net.to(device)
 

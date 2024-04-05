@@ -154,7 +154,7 @@ if __name__ == "__main__":
     logger.addHandler(ch)
     
     H_ = {
-        'lr': 1e-5, 
+        'lr': 5e-5, 
         'batch_size': 512, 
         'epochs': 200, 
     }
