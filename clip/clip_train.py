@@ -4,29 +4,29 @@ from torch.utils.data import DataLoader
 import pandas as pd
 
 from clip.clip_model import CLIP
-from dataset.ptbxl_dataset import PtbxlDataset, PtbxlDataset_VAE
-from dataset.mimic_iv_ecg_dataset import VAE_MIMIC_IV_ECG_Dataset
+# from dataset.ptbxl_dataset import PtbxlDataset, PtbxlDataset_VAE
+from dataset.mimic_iv_ecg_dataset import DictDataset
 from vae.vae_model import VAE_Decoder
 
 import os
 import logging
 
-embedding_dict_ptbxl = pd.read_csv('/data/0shared/chenjiabo/DiffuSETS/data/ptbxl_database_embed.csv', low_memory=False)[['ecg_id', 'text_embed']]
-original_sheet = pd.read_csv('/data/0shared/laiyongfan/data_text2ecg/ptb-xl/ptbxl_database.csv', low_memory=False)
-embedding_dict_ptbxl = pd.merge(embedding_dict_ptbxl, original_sheet)
+# embedding_dict_ptbxl = pd.read_csv('/data/0shared/chenjiabo/DiffuSETS/data/ptbxl_database_embed.csv', low_memory=False)[['ecg_id', 'text_embed']]
+# original_sheet = pd.read_csv('/data/0shared/laiyongfan/data_text2ecg/ptb-xl/ptbxl_database.csv', low_memory=False)
+# embedding_dict_ptbxl = pd.merge(embedding_dict_ptbxl, original_sheet)
 
-def fetch_text_embedding_ptbxl(text:str):
-    text = text.split('|')[0]
-    text = text.replace('The report of the ECG is that ', '')
-    try:
-        text_embed = embedding_dict_ptbxl.loc[embedding_dict_ptbxl['report'] == text, 'text_embed'].values[0]
-        text_embed = eval(text_embed)
-    except IndexError:
-        text_embed = [0] * 1536
-    # print(text_embed)
-    return torch.tensor(text_embed)
+# def fetch_text_embedding_ptbxl(text:str):
+#     text = text.split('|')[0]
+#     text = text.replace('The report of the ECG is that ', '')
+#     try:
+#         text_embed = embedding_dict_ptbxl.loc[embedding_dict_ptbxl['report'] == text, 'text_embed'].values[0]
+#         text_embed = eval(text_embed)
+#     except IndexError:
+#         text_embed = [0] * 1536
+#     # print(text_embed)
+#     return torch.tensor(text_embed)
 
-embedding_dict_mimic = pd.read_csv('/data/0shared/chenjiabo/DiffuSETS/data/mimic_iv_text_embed.csv')
+embedding_dict_mimic = pd.read_csv('./mimic_iv_text_embed.csv')
 
 def fetch_text_embedding_mimic_report_0(text: str):
     text = text.split('|')[0]
@@ -38,7 +38,7 @@ def fetch_text_embedding_mimic_report_0(text: str):
     except IndexError:
         text_embed = embedding_dict_mimic.iloc[-1]['embed']
         text_embed = eval(text_embed)
-        # print(1, text)
+        print(1, text)
     return torch.tensor(text_embed)
     
 
@@ -154,9 +154,9 @@ if __name__ == '__main__':
 
     H_ = {
         'embed_dim': 64, 
-        'lr': 1e-5, 
+        'lr': 1e-3,  
         'batch_size': 256, 
-        'epochs': 50, 
+        'epochs': 10, 
         'load_from_pretrain': False
     }
     logger.info(H_)
@@ -169,20 +169,21 @@ if __name__ == '__main__':
         device = torch.device('cpu')
     logger.info(f'Using device: {device}')
 
-    ptb_path = '/data/0shared/laiyongfan/data_text2ecg/ptb-xl/'
-    ptb_vae_path = '/data/0shared/laiyongfan/data_text2ecg/ptb-xl_vae'
-    mimiv_vae_path = '/data/0shared/laiyongfan/data_text2ecg/mimic_vae'
+    # ptb_path = '/data/0shared/laiyongfan/data_text2ecg/ptb-xl/'
+    # ptb_vae_path = '/data/0shared/laiyongfan/data_text2ecg/ptb-xl_vae'
+    mimic_vae_path = './mimic_vae.pt'
+    mimic_vae_lite_path = './mimic_vae_lite.pt'
     # train_dataset = PtbxlDataset(ptbxl_path=ptb_path, sampling_rate=500, use_all=True, combine_diagnostic=False) 
-    train_dataset = VAE_MIMIC_IV_ECG_Dataset(mimiv_vae_path)
+    train_dataset = DictDataset(mimic_vae_path)
     # train_dataset = PtbxlDataset_VAE(path=ptb_vae_path)
     # test_dataset = PtbxlDataset(ptbxl_path=ptb_path, sampling_rate=500, is_train=False, combine_diagnostic=False)
-    test_dataset = VAE_MIMIC_IV_ECG_Dataset(mimiv_vae_path, usage='test')
+    # test_dataset = DictDataset(mimic_vae_lite_path)
     train_dataloader = DataLoader(train_dataset, batch_size=H_['batch_size'], shuffle=True) 
-    test_dataloader = DataLoader(test_dataset, batch_size=64, shuffle=True)
+    test_dataloader = DataLoader(train_dataset, batch_size=H_['batch_size'], shuffle=True)
 
     decoder = None
     decoder = VAE_Decoder()
-    vae_path = '/data/0shared/laiyongfan/data_text2ecg/models/vae_model.pth'
+    vae_path = './checkpoints/vae_1/vae_model.pth'
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])
     decoder = decoder.to(device)
@@ -197,18 +198,22 @@ if __name__ == '__main__':
 
     clip_model.to(device)
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(clip_model.parameters(), lr=H_['lr'])
+    optimizer = torch.optim.AdamW(clip_model.parameters(), lr=H_['lr'], weight_decay=1e-3)
 
+    max_score = 0.4
     for t in range(H_['epochs']):
         logger.info(f"Epoch {t+1}\n-------------------------------")
-        kld_weights = torch.arange(1, H_['epochs'] + 1) / H_['epochs']
         # Setting decoder to None if using original ECG
         epoch_avg_loss = train_loop(train_dataloader, fetch_text_embedding_mimic_report_0, clip_model, loss_fn, optimizer, device, decoder=decoder)
         logger.info(f"Evaluating training clip score...")
         # Setting decoder to None if using original ECG
         epoch_avg_clip_score = eval_score(test_dataloader, fetch_text_embedding_mimic_report_0, clip_model, device, decoder=decoder)
         logger.info(f"Epoch {t+1} Loss: {epoch_avg_loss} EVAL CLIP Score: {epoch_avg_clip_score}")
-        if is_save and t > 10:
-            save_path = os.path.join(save_weights_path, f"CLIP_model_ep{t+1}.pth")
+        if epoch_avg_clip_score > max_score:
+            save_path = os.path.join(save_weights_path, "clip_best.pth")
             torch.save(clip_model.state_dict(), save_path)
+            logger.info("CLIP_best has been saved")
+            max_score = epoch_avg_clip_score
+        if (t + 1) % 10 == 0:
+            torch.save(clip_model.state_dict(), os.path.join(save_weights_path, f'clip_model_ep{t + 1}.pth'))
     logger.info("done!")

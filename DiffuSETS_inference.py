@@ -165,7 +165,7 @@ if __name__ == "__main__":
     n_channels = 4
     num_train_steps = 1000
     net = ECGconditional(num_train_steps, kernel_size=7, num_levels=5, n_channels=n_channels)
-    unet_path = './checkpoints/unet_8/unet_best.pth'
+    unet_path = './checkpoints/unet_11/unet_best.pth'
     net.load_state_dict(torch.load(unet_path, map_location=device))
     net = net.to(device)
 
