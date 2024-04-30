@@ -1,15 +1,6 @@
-import math
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-import numpy as np
-import pandas as pd
-
-condition_id = {
-    'text': 0,
-    'gender': 1,
-    'age': 2,
-    'heart rate': 3}
 
 class TimeEmbedding(nn.Module):
     def __init__(self, number_of_diffusions, n_channels=1, dim_embed=64, dim_latent=128):
@@ -71,7 +62,7 @@ class SelfAttention(nn.Module):
 
 
 class CrossAttention(nn.Module):
-    def __init__(self, vector_size, hidden_dim=16, num_heads=4, text_embed_dim=1536, value_embed_dim=1):
+    def __init__(self, vector_size, hidden_dim=16, num_heads=4, text_embed_dim=1536):
         # vector_size: encoding_dim, i.e. channels
         super(CrossAttention, self).__init__()
 
@@ -84,10 +75,10 @@ class CrossAttention(nn.Module):
 
         self.attention = nn.MultiheadAttention(hidden_dim, num_heads=num_heads, batch_first=True)
         self.normalization = nn.LayerNorm(vector_size)
-        self.value_combiner = nn.Linear(text_embed_dim + 3 * value_embed_dim, vector_size)
+        self.value_combiner = nn.Linear(text_embed_dim, vector_size)
         self.condition_normalization = nn.LayerNorm(vector_size)
 
-    def forward(self, x, text_embed, dict):
+    def forward(self, x, text_embed):
         # x: (B, seq_length, vector_size) or (B, l, c) 
         x_norm = self.normalization(x)
         q = self.to_q(x_norm)
@@ -98,9 +89,6 @@ class CrossAttention(nn.Module):
             combined_embeds = text_embed
         else:
             print("err_text")
-
-        for key, value in dict.items():
-            combined_embeds = torch.cat([combined_embeds, value], dim=-1)
 
         # combined_embeds: (B, seq_length, vector_size)
         combined_embeds_tensor = self.value_combiner(combined_embeds)
@@ -136,7 +124,7 @@ class Block(nn.Module):
         
         self.time_emb = TimeEmbedding(number_of_diffusions, n_inputs)
 
-    def forward(self, x, t, text_embed, conditon):
+    def forward(self, x, t, text_embed):
         # x: (B, C_in, L)
         initial_x = x
         t = self.time_emb(t).unsqueeze(-1)
@@ -152,7 +140,7 @@ class Block(nn.Module):
         # shortcut: (B, L, C_short)
         shortcut = shortcut.transpose(-1, -2)
         shortcut = self.self_attention(shortcut)
-        shortcut = self.cross_attention(shortcut, text_embed, conditon)
+        shortcut = self.cross_attention(shortcut, text_embed)
         shortcut = self.attention_norm(shortcut) 
         shortcut = shortcut.transpose(-1, -2)
 
@@ -172,8 +160,8 @@ class DownsamplingBlock(nn.Module):
         self.down = nn.Conv1d(in_channels=n_outputs, out_channels=n_outputs, kernel_size=3, stride=2, padding=1)
         self.block = Block(n_inputs, n_outputs, number_of_diffusions, kernel_size=kernel_size, n_heads=n_heads, hidden_dim=hidden_dim, text_embed_dim=text_embed_dim)
 
-    def forward(self, x, t, text_embed, conditon):
-        h = self.block(x, t, text_embed, conditon)
+    def forward(self, x, t, text_embed):
+        h = self.block(x, t, text_embed)
         # DOWNSAMPLING
         out = self.down(h)
         return h, out
@@ -190,11 +178,11 @@ class UpsamplingBlock(nn.Module):
         else:
             self.up = nn.ConvTranspose1d(up_dim, up_dim, kernel_size=4, stride=2, padding=1)
 
-    def forward(self, x, h, t, text_embed, conditon):
+    def forward(self, x, h, t, text_embed):
         x = self.up(x) 
         if h is not None:
             x = torch.cat([x, h], dim=1)
-        out = self.block(x, t, text_embed, conditon)
+        out = self.block(x, t, text_embed)
         return out
 
 
@@ -213,7 +201,7 @@ class BottleneckNet(nn.Module):
         self.self_attention = SelfAttention(channels=n_channels, hidden_dim=hidden_dim, num_heads=n_heads)
         self.cross_attention = CrossAttention(n_channels, num_heads=n_heads, hidden_dim=hidden_dim, text_embed_dim=text_embed_dim)
 
-    def forward(self, x, t, text_embed, conditon):
+    def forward(self, x, t, text_embed):
         out = x
         tt = self.time_emb(t).unsqueeze(-1)
         out = out + tt
@@ -225,7 +213,7 @@ class BottleneckNet(nn.Module):
 
         out = out.transpose(-1, -2)
         out = self.self_attention(out)
-        out = self.cross_attention(out, text_embed, conditon)
+        out = self.cross_attention(out, text_embed)
         out = self.attention_norm(out) 
         out = out.transpose(-1, -2)
 
@@ -240,9 +228,9 @@ class BottleneckNet(nn.Module):
         return out
 
 
-class ECGconditional(nn.Module):
+class ECGnocondition(nn.Module):
     def __init__(self, number_of_diffusions, kernel_size=3, num_levels=5, n_channels=4, text_embed_dim=1536):
-        super(ECGconditional, self).__init__()
+        super(ECGnocondition, self).__init__()
 
         self.num_levels = num_levels
         input_channels_list = []
@@ -297,7 +285,7 @@ class ECGconditional(nn.Module):
         self.output_conv = nn.Sequential(nn.Conv1d(output_channels_list[-1], n_channels, 3, padding="same"), nn.Mish(),
                                          nn.Conv1d(n_channels, n_channels, 1, padding="same"))
 
-    def forward(self, x, t, text_embed, condition):
+    def forward(self, x, t, text_embed):
         '''
         '''
         shortcuts = []
@@ -305,21 +293,21 @@ class ECGconditional(nn.Module):
 
         # DOWNSAMPLING BLOCKS
         for block in self.downsampling_blocks:
-            h, out = block(out, t, text_embed, condition)
+            h, out = block(out, t, text_embed)
             shortcuts.append(h)
             # print(out.shape)
         del shortcuts[-1]
         #out = self.downsampling_blocks[-1](out)
 
         # BOTTLENECK CONVOLUTION
-        out = self.bottelneck(out, t, text_embed, condition) 
+        out = self.bottelneck(out, t, text_embed) 
         # print(out.shape)      
 
         # UPSAMPLING BLOCKS
-        out = self.upsampling_blocks[0](out, None, t, text_embed, condition)
+        out = self.upsampling_blocks[0](out, None, t, text_embed)
         # print(out.shape)
         for idx, block in enumerate(self.upsampling_blocks[1:]):
-            out = block(out, shortcuts[-1-idx], t, text_embed, condition)
+            out = block(out, shortcuts[-1-idx], t, text_embed)
             # print(out.shape)
 
         # OUTPUT CONV
@@ -329,13 +317,10 @@ class ECGconditional(nn.Module):
 
 if __name__ == '__main__':
 
-    unet = ECGconditional(1000)
+    unet = ECGnocondition(1000)
     batch_size = 64 
     vae_latent = torch.randn((batch_size, 4, 128))
     t = torch.randperm(1000)[:batch_size]
     text_embed = torch.randn((batch_size, 1, 1536))
-    condition = {'gender': torch.randn((batch_size, 1, 1)), 
-                    'age': torch.randn((batch_size, 1, 1)), 
-                    'heart rate': torch.randn((batch_size, 1, 1))}
     
-    output = unet(vae_latent, t, text_embed, condition)
+    output = unet(vae_latent, t, text_embed)
