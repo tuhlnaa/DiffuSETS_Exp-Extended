@@ -6,8 +6,8 @@ import wfdb
 from tqdm import tqdm
 import json
 
-def generation_from_net(diffused_model, net, batch_size, device, text_embed, condition, num_channels=4, dim=128):
-    net.eval()
+def generation_from_net(diffused_model, unet, batch_size, device, text_embed, condition, num_channels, dim):
+    unet.eval()
     xi = torch.randn(batch_size, num_channels, dim)
     xi = xi.to(device)
     timesteps = tqdm(diffused_model.timesteps)
@@ -17,9 +17,9 @@ def generation_from_net(diffused_model, net, batch_size, device, text_embed, con
 
             # change this line to fit your unet 
             if condition:
-                noise_predict = net(xi, t, text_embed, condition)
+                noise_predict = unet(xi, t, text_embed, condition)
             else:
-                noise_predict = net(xi, t, text_embed)
+                noise_predict = unet(xi, t, text_embed)
 
             xi = diffused_model.step(model_output=noise_predict, 
                                      timestep=i, 
@@ -29,11 +29,10 @@ def generation_from_net(diffused_model, net, batch_size, device, text_embed, con
 def get_embedding_from_api(text: str):
     return np.random.random(1536)
 
-def batch_generate_ECG(settings, 
-                       unet, 
-                       diffused_model, 
-                       decoder, 
-                       condition):
+def batch_generate_ECG_novae(settings, 
+                             unet, 
+                             diffused_model, 
+                             condition):
 
     save_path = settings['save_path']
     if not os.path.exists(save_path):
@@ -88,15 +87,20 @@ def batch_generate_ECG(settings,
             print(condition_dict)
 
     unet.to(device) 
-    decoder.to(device)
-    latent = generation_from_net(diffused_model, unet, batch_size=batch, device=device, text_embed=text_embed, condition=condition_dict)
-    
+    gen_ecg = generation_from_net(diffused_model=diffused_model, 
+                                  unet=unet, 
+                                  batch_size=batch, 
+                                  device=device, 
+                                  text_embed=text_embed, 
+                                  condition=condition_dict, 
+                                  num_channels=12, 
+                                  dim=1024) 
+    # (B, C, L) -> (B, L, C)
+    gen_ecg = gen_ecg.transpose(-1, -2)
 
     if save_img:
-        gen_ecg = decoder(torch.Tensor(latent))
         for j in range(batch):
             output = gen_ecg[j]
-
             output_ = output.squeeze(0).detach().cpu().numpy()
             wfdb.plot_items(output_, figsize=(10, 10), title="Generated ECG")
             plt.savefig(os.path.join(save_path , f'{j} Generated ECG.png'))
@@ -105,4 +109,3 @@ def batch_generate_ECG(settings,
     with open(os.path.join(save_path , 'features.json'), 'w') as json_file:
         json.dump(features_file_content, json_file, indent=4)
         print(f"Features has been successfully written to {save_path}/features.json")
-        

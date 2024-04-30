@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+
 import time
 import os
 import numpy as np
@@ -7,16 +8,16 @@ import numpy as np
 def train_epoch_channels(dataloader, 
                          unet, 
                          diffused_model, 
-                         text_embed_table, 
-                         condition, 
                          optimizer, 
+                         text_embed_table, 
                          device, 
+                         decoder, 
+                         condition, 
                          number_of_repetition=1):
     loss_list = []
     unet.train()
     for _ in range(number_of_repetition):
         for data, label in dataloader:
-
             text_embed = []
             for text in label['text']:
                 input_ = text.split('|')[0]
@@ -34,14 +35,16 @@ def train_epoch_channels(dataloader,
             text_embed = np.array(text_embed)
             text_embed = np.repeat(text_embed[:, np.newaxis, :], 1, axis=1)
             text_embed = torch.Tensor(text_embed)
+
             text_embed = text_embed.to(device)
-
             latent = data.to(device)
+            # (B, L, C) -> (B, C, L)
+            ecg = decoder(latent).transpose(-1, -2)
 
-            t = torch.randperm(diffused_model.config.num_train_timesteps-2)[:latent.shape[0]] + 1 
+            t = torch.randperm(diffused_model.config.num_train_timesteps-2)[:ecg.shape[0]] + 1 
 
-            noise = torch.randn(latent.shape, device=latent.device)
-            xt = diffused_model.add_noise(latent, noise, t)
+            noise = torch.randn(ecg.shape, device=ecg.device)
+            xt = diffused_model.add_noise(ecg, noise, t)
 
             xt = xt.to(device)
             t = t.to(device)
@@ -51,8 +54,9 @@ def train_epoch_channels(dataloader,
                 gender = []
                 age = label['age']
                 hr = label['hr']
+
                 condition_dict = {}
-            
+                
                 for ch in label['gender']:
                     if ch == 'M':
                         gender.append(1)
@@ -82,8 +86,8 @@ def train_epoch_channels(dataloader,
                 for key in condition_dict:
                     condition_dict[key] = condition_dict[key].to(device)
 
-                noise_estim = unet(xt, t, text_embed, condition_dict)
-            else: 
+                noise_estim = unet(xt, t, text_embed, condition)
+            else:
                 noise_estim = unet(xt, t, text_embed)
 
             # Batchwise MSE loss 
@@ -96,29 +100,33 @@ def train_epoch_channels(dataloader,
     return sum(loss_list) / len(loss_list)
 
 
-def train_model(meta, 
+def train_model_novae(meta, 
                 save_weights_path, 
                 dataloader,  
                 diffused_model, 
                 unet, 
+                decoder, 
                 text_embed_table, 
                 h_, 
                 logger):
- 
+    
     device = torch.device(meta['device'] if torch.cuda.is_available() else "cpu")
+    decoder = decoder.to(device)
     unet = unet.to(device)
     optimizer = torch.optim.AdamW(params=unet.parameters(), lr=h_['lr'])
+    min_loss = 100
 
-    min_loss = 50
     start_time = time.time()
+
     for i in range(1, h_['epochs'] + 1):
         s_t = time.time()
         mean_loss = train_epoch_channels(dataloader=dataloader, 
                                          unet=unet, 
                                          diffused_model=diffused_model, 
                                          optimizer=optimizer, 
-                                         text_embed_table=text_embed_table, 
+                                         text_embed_table=text_embed_table,
                                          device=device, 
+                                         decoder=decoder, 
                                          condition=meta['condition'], 
                                          number_of_repetition=1)
         logger.info(f'Epoch: {i}, mean loss: {mean_loss}')
@@ -131,3 +139,4 @@ def train_model(meta,
 
         e_t = time.time()
         logger.info(f"Epoch Time Used: {e_t - s_t}s; Total Time Used: {e_t - start_time}s")
+
