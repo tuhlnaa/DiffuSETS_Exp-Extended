@@ -7,3 +7,5 @@ config/*
 *sample*
 *.pt
 *.csv
+*.pth 
+exp/

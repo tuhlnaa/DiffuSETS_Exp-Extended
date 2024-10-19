@@ -20,8 +20,9 @@ def main():
     settings = config['inference_setting']
     h_ = config['hyper_para']
 
-    condition = config['train_meta']['condition']
-    use_vae_latent = config['train_meta']['vae_latent']
+    condition = config['meta']['condition']
+    use_vae_latent = config['meta']['vae_latent']
+    settings['device'] = config['meta']['device']
 
     n_channels = 4 if use_vae_latent else 12
     if condition:
@@ -44,7 +45,7 @@ def main():
         from vae.vae_model import VAE_Decoder
 
         decoder = VAE_Decoder()
-        vae_path = settings['vae_path']
+        vae_path = config['dependencies']['vae_path']
         checkpoint = torch.load(vae_path, map_location='cpu')
         decoder.load_state_dict(checkpoint['decoder'])
 

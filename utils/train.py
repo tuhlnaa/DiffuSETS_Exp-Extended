@@ -3,11 +3,12 @@ import torch.nn.functional as F
 import time
 import os
 import numpy as np
+from utils.text_to_emb import get_text_embedding 
 
 def train_epoch_channels(dataloader, 
                          unet, 
                          diffused_model, 
-                         text_embed_table, 
+                        #  text_embed_table, 
                          condition, 
                          optimizer, 
                          device, 
@@ -17,21 +18,24 @@ def train_epoch_channels(dataloader,
     for _ in range(number_of_repetition):
         for data, label in dataloader:
 
-            text_embed = []
-            for text in label['text']:
-                input_ = text.split('|')[0]
-                # print(input_)
-                if len(input_) >= 1 and input_[-1] != '.':
-                    input_ += '.'
-                if len(text_embed_table.loc[text_embed_table['text'] == input_, 'embed']) > 0:
-                    embed = text_embed_table.loc[text_embed_table['text'] == input_, 'embed'].values[0]
-                else:
-                    print(1)
-                    embed = text_embed_table.iloc[-1]['embed']
-                embed = eval(embed)
-                text_embed.append(embed)
-
+            # text_embed = []
+            # for text in label['text']:
+            #     input_ = text.split('|')[0]
+            #     # print(input_)
+            #     if len(input_) >= 1 and input_[-1] != '.':
+            #         input_ += '.'
+            #     if len(text_embed_table.loc[text_embed_table['text'] == input_, 'embed']) > 0:
+            #         embed = text_embed_table.loc[text_embed_table['text'] == input_, 'embed'].values[0]
+            #     else:
+            #         print(1)
+            #         embed = text_embed_table.iloc[-1]['embed']
+            #     embed = eval(embed)
+            #     text_embed.append(embed)
+            
+            # (1536, B) 
+            text_embed = label['text_embed']
             text_embed = np.array(text_embed)
+            text_embed = text_embed.transpose(1, 0) 
             text_embed = np.repeat(text_embed[:, np.newaxis, :], 1, axis=1)
             text_embed = torch.Tensor(text_embed)
             text_embed = text_embed.to(device)
@@ -101,7 +105,7 @@ def train_model(meta,
                 dataloader,  
                 diffused_model, 
                 unet, 
-                text_embed_table, 
+                # text_embed_table, 
                 h_, 
                 logger):
  
@@ -117,7 +121,7 @@ def train_model(meta,
                                          unet=unet, 
                                          diffused_model=diffused_model, 
                                          optimizer=optimizer, 
-                                         text_embed_table=text_embed_table, 
+                                        #  text_embed_table=text_embed_table, 
                                          device=device, 
                                          condition=meta['condition'], 
                                          number_of_repetition=1)

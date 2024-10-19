@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import pandas as pd
+import numpy as np 
 
 from clip.clip_model import CLIP
 # from dataset.ptbxl_dataset import PtbxlDataset, PtbxlDataset_VAE
@@ -75,9 +76,13 @@ def train_loop(dataloader, fetch_func, model, loss_fn, optimizer, device, decode
     total_loss = 0
     for batch, (X, y) in enumerate(dataloader):
 
-        texts = y['text']
-        texts = [fetch_func(x) for x in texts]
-        text_embedding = torch.stack(texts)
+        # texts = y['text']
+        # texts = [fetch_func(x) for x in texts]
+        # text_embedding = torch.stack(texts)
+
+        text_embed = y['text_embed'] 
+        text_embedding = torch.tensor(np.array(text_embed), dtype=torch.float)
+        text_embedding = text_embedding.transpose(1, 0)
 
         if decoder:
             X = X.to(device)
@@ -99,9 +104,14 @@ def eval_score(dataloader, fetch_func, model, device, decoder=None):
 
     total_clip_score = 0
     for batch, (X, y) in enumerate(dataloader):
-        texts = y['text']
-        texts = [fetch_func(x) for x in texts]
-        text_embedding = torch.stack(texts).to(device)
+        # texts = y['text']
+        # texts = [fetch_func(x) for x in texts]
+        # text_embedding = torch.stack(texts).to(device)
+
+        text_embed = y['text_embed'] 
+        text_embedding = torch.tensor(np.array(text_embed), dtype=torch.float)
+        text_embedding = text_embedding.transpose(1, 0)
+        text_embedding = text_embedding.to(device) 
 
         X = X.to(device)
         if decoder:
@@ -164,15 +174,14 @@ if __name__ == '__main__':
     is_save = True
 
     if torch.cuda.is_available():
-        device = torch.device('cuda:1')
+        device = torch.device('cuda:0')
     else:
         device = torch.device('cpu')
     logger.info(f'Using device: {device}')
 
     # ptb_path = '/data/0shared/laiyongfan/data_text2ecg/ptb-xl/'
     # ptb_vae_path = '/data/0shared/laiyongfan/data_text2ecg/ptb-xl_vae'
-    mimic_vae_path = './mimic_vae.pt'
-    mimic_vae_lite_path = './mimic_vae_lite.pt'
+    mimic_vae_path = './prerequisites/mimic_vae_0_new.pt'
     # train_dataset = PtbxlDataset(ptbxl_path=ptb_path, sampling_rate=500, use_all=True, combine_diagnostic=False) 
     train_dataset = DictDataset(mimic_vae_path)
     # train_dataset = PtbxlDataset_VAE(path=ptb_vae_path)

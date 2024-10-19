@@ -6,6 +6,8 @@ import wfdb
 from tqdm import tqdm
 import json
 
+from utils.text_to_emb import prompt_propcess 
+
 def generation_from_net(diffused_model, net, batch_size, device, text_embed, condition, num_channels=4, dim=128):
     net.eval()
     xi = torch.randn(batch_size, num_channels, dim)
@@ -26,7 +28,8 @@ def generation_from_net(diffused_model, net, batch_size, device, text_embed, con
                                      sample=xi)['prev_sample']
     return xi 
 
-def get_embedding_from_api(text: str):
+def get_embedding_from_api(text: str): 
+    text = prompt_propcess(text) 
     return np.random.random(1536)
 
 def batch_generate_ECG(settings, 
