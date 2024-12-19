@@ -27,21 +27,64 @@ import logging
 #     # print(text_embed)
 #     return torch.tensor(text_embed)
 
-embedding_dict_mimic = pd.read_csv('./mimic_iv_text_embed.csv')
+# embedding_dict_mimic = pd.read_csv('./mimic_iv_text_embed.csv')
 
 def fetch_text_embedding_mimic_report_0(text: str):
-    text = text.split('|')[0]
-    if len(text) > 0 and text[-1] != '.':
-        text += '.'
-    try:
-        text_embed = embedding_dict_mimic.loc[embedding_dict_mimic['text'] == text, 'embed'].values[0]
-        text_embed = eval(text_embed)
-    except IndexError:
-        text_embed = embedding_dict_mimic.iloc[-1]['embed']
-        text_embed = eval(text_embed)
-        print(1, text)
-    return torch.tensor(text_embed)
-    
+    # text = text.split('|')[0]
+    # if len(text) > 0 and text[-1] != '.':
+    #     text += '.'
+    # try:
+    #     text_embed = embedding_dict_mimic.loc[embedding_dict_mimic['text'] == text, 'embed'].values[0]
+    #     text_embed = eval(text_embed)
+    # except IndexError:
+    #     text_embed = embedding_dict_mimic.iloc[-1]['embed']
+    #     text_embed = eval(text_embed)
+    #     print(1, text)
+    # return torch.tensor(text_embed)
+    pass
+
+def train_batch_with_accumulation(ecgs, text_embeddings, model, device, criterion, optimizer, decoder, accumulation_steps=8):
+    model.train()
+    optimizer.zero_grad()  # Initialize gradient to zero
+
+    # Split the batch into mini-batches
+    batch_size = ecgs.shape[0]
+    mini_batch_size = batch_size // accumulation_steps  # Size of each mini-batch
+    total_loss = 0.0  # To track cumulative loss
+
+    for i in range(accumulation_steps):
+        # Extract mini-batch
+        start_idx = i * mini_batch_size
+        end_idx = start_idx + mini_batch_size
+
+        ecg_mini = ecgs[start_idx:end_idx].to(device)
+        ecg_mini = decoder(ecg_mini)
+        text_mini = text_embeddings[start_idx:end_idx].to(device)
+
+        # Forward pass
+        logits_per_ecg, logits_per_text = model(ecg_mini, text_mini)
+
+        # Create labels for this mini-batch
+        labels = torch.arange(ecg_mini.shape[0]).to(device)
+
+        # Compute loss
+        loss_ecg = criterion(logits_per_ecg, labels)
+        loss_txt = criterion(logits_per_text, labels)
+        loss = (loss_ecg + loss_txt) / 2  # Average loss for ECG and text
+
+        # Normalize loss for accumulation
+        loss = loss / accumulation_steps
+        total_loss += loss.item()
+
+        # Backward pass (accumulate gradients)
+        loss.backward()
+
+        # Perform optimizer step and zero_grad only after accumulation steps
+        if (i + 1) % accumulation_steps == 0 or (i + 1) == accumulation_steps:
+            optimizer.step()
+            optimizer.zero_grad()
+
+    return total_loss  # Return average loss over the full batch 
 
 def train_batch(ecgs, text_embeddings, model, device, criterion, optimizer):
     ecgs, text_embeddings = ecgs.to(device), text_embeddings.to(device)
@@ -84,11 +127,11 @@ def train_loop(dataloader, fetch_func, model, loss_fn, optimizer, device, decode
         text_embedding = torch.tensor(np.array(text_embed), dtype=torch.float)
         text_embedding = text_embedding.transpose(1, 0)
 
-        if decoder:
-            X = X.to(device)
-            X = decoder(X)
+        # if decoder:
+        #     X = X.to(device)
+        #     X = decoder(X)
 
-        loss = train_batch(ecgs=X, text_embeddings=text_embedding, model=model, device=device, criterion=loss_fn, optimizer=optimizer)
+        loss = train_batch_with_accumulation(ecgs=X, text_embeddings=text_embedding, model=model, device=device, criterion=loss_fn, optimizer=optimizer, decoder=decoder)
         total_loss += loss
 
         if batch % 100 == 0:
@@ -100,7 +143,6 @@ def train_loop(dataloader, fetch_func, model, loss_fn, optimizer, device, decode
 @torch.no_grad()
 def eval_score(dataloader, fetch_func, model, device, decoder=None):
     model.eval()
-    decoder.eval()
 
     total_clip_score = 0
     for batch, (X, y) in enumerate(dataloader):
@@ -135,9 +177,6 @@ def eval_score(dataloader, fetch_func, model, device, decoder=None):
 
     return total_clip_score / len(dataloader.dataset)
 
-
-
-
 if __name__ == '__main__':
 
     k_max = 0
@@ -165,7 +204,7 @@ if __name__ == '__main__':
     H_ = {
         'embed_dim': 64, 
         'lr': 1e-3,  
-        'batch_size': 256, 
+        'batch_size': 2048, 
         'epochs': 10, 
         'load_from_pretrain': False
     }
@@ -188,7 +227,7 @@ if __name__ == '__main__':
     # test_dataset = PtbxlDataset(ptbxl_path=ptb_path, sampling_rate=500, is_train=False, combine_diagnostic=False)
     # test_dataset = DictDataset(mimic_vae_lite_path)
     train_dataloader = DataLoader(train_dataset, batch_size=H_['batch_size'], shuffle=True) 
-    test_dataloader = DataLoader(train_dataset, batch_size=H_['batch_size'], shuffle=True)
+    test_dataloader = DataLoader(train_dataset, batch_size=256, shuffle=True)
 
     decoder = None
     decoder = VAE_Decoder()
@@ -196,6 +235,7 @@ if __name__ == '__main__':
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])
     decoder = decoder.to(device)
+    decoder.eval()
 
     clip_model = CLIP(embed_dim=H_['embed_dim'])
 

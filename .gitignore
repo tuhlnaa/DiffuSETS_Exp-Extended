@@ -8,4 +8,5 @@ config/*
 *.pt
 *.csv
 *.pth 
+*.npy
 exp/

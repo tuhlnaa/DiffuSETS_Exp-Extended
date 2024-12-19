@@ -379,6 +379,21 @@ class Net1D(nn.Module):
 
         deep_features = out.mean(-1)
         return deep_features
+    
+
+class MLP(nn.Module):
+
+    def __init__(self, input_dim, output_dim, hidden_dim):
+        super().__init__()
+        self.linear_1 = nn.Linear(input_dim, hidden_dim)
+        self.linear_2 = nn.Linear(hidden_dim, output_dim)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.linear_1(x)
+        x = self.relu(x)
+        x = self.linear_2(x)
+        return x
 
 class CLIP(nn.Module):
     def __init__(self,
@@ -390,7 +405,7 @@ class CLIP(nn.Module):
                  ):
         super().__init__()
 
-        filter_list = [64,160,160,400,400,1024,1024]
+        filter_list = [64,128,128,256,256,512,1024]
         self.resnet = Net1D(
                 in_channels=ecg_channels, 
                 base_filters=64, 
@@ -406,7 +421,7 @@ class CLIP(nn.Module):
 
         # final projector
         self.ecg_projector = nn.Linear(filter_list[-1], embed_dim)
-        self.text_projector = nn.Linear(text_embed_dim, embed_dim)
+        self.text_projector = MLP(input_dim=text_embed_dim, output_dim=embed_dim, hidden_dim=2048)
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
     @property
