@@ -2,9 +2,9 @@ import torch
 import os 
 from matplotlib import pyplot as plt
 import numpy as np 
-import wfdb
 from tqdm import tqdm
 import json
+import ecg_plot 
 
 from utils.text_to_emb import prompt_propcess 
 
@@ -30,6 +30,7 @@ def generation_from_net(diffused_model, unet, batch_size, device, text_embed, co
 
 def get_embedding_from_api(text: str, openai_key: str): 
     text = prompt_propcess(text) 
+    print(text)
 
     from openai import OpenAI
     client = OpenAI(api_key=openai_key)
@@ -63,7 +64,6 @@ def batch_generate_ECG_novae(settings,
 
     features_file_content = {}
 
-    print('Diagnosis: The report of the ECG is that {' + text + '}.')
     text_embed = get_embedding_from_api(text, settings['OPENAI_API_KEY'])
 
     text_embed = np.array(text_embed)
@@ -115,7 +115,7 @@ def batch_generate_ECG_novae(settings,
         for j in range(batch):
             output = gen_ecg[j]
             output_ = output.squeeze(0).detach().cpu().numpy()
-            wfdb.plot_items(output_, figsize=(10, 10), title="Generated ECG")
+            ecg_plot.plot(output_.transpose(1, 0), 102.4)            
             plt.savefig(os.path.join(save_path , f'{j} Generated ECG.png'))
             plt.close()
 

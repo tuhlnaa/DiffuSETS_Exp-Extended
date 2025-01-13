@@ -11,3 +11,6 @@ checkpoints/*
 *.npy
 exp/
 figures/
+.DS_Store
+.zip
+.vscode

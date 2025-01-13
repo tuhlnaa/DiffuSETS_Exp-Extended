@@ -92,8 +92,8 @@ Below is a example of settings with detailed explanation , you can alter it to m
         "save_path": "./test_sample_all", 
         "unet_path": "./text2ecg/prerequisites/unet_all.pth", 
 
-        "text": "Sinus rhythm.", 
-        "@text": "text report for generation", 
+        "text": "sinus rhythm|abnormal ecg.", 
+        "@text": "text reports for generation, multiple reports are split by '|' ", 
 
         "OPENAI_API_KEY": "",  
         "@OPENAI_API_KEY": "Fill with your API KEY", 
