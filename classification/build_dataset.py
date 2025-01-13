@@ -21,7 +21,7 @@ def parse_label_pvc(text: str):
     else:
         return 1 
 
-def build_dataset(src: str, dst: str): 
+def build_dataset(src: str, dst: str, parse_func): 
     assert src != dst 
     src_dataset = torch.load(src)  
 
@@ -31,7 +31,7 @@ def build_dataset(src: str, dst: str):
     for key, value in tqdm.tqdm(src_dataset.items()): 
         text = value['label']['text'] 
         data = value['data']
-        label = parse_label_pvc(text) 
+        label = parse_func(text) 
 
         value = { 'label': {'label': label, 'text': text}, 
                  'data': data}
@@ -48,6 +48,13 @@ def build_dataset(src: str, dst: str):
     torch.save(test_dict, dst + 'test.pt') 
 
 if __name__ == '__main__': 
+    exp_type = 'pvc'
+
     src = './prerequisites/mimic_vae_lite_0.pt'
-    dst = './prerequisites/mimic_vae_clf_pvc_'
-    build_dataset(src, dst)
+    dst = f'./prerequisites/clf_data/mimic_vae_clf_{exp_type}_'
+    parse_func_dict = {
+        'normal': parse_label_normal,
+        'af': parse_label_af,
+        'pvc': parse_label_pvc
+    }
+    build_dataset(src, dst, parse_func_dict[exp_type])

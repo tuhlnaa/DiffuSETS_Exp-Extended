@@ -43,7 +43,7 @@ def fetch_text_embedding_mimic_report_0(text: str):
     # return torch.tensor(text_embed)
     pass
 
-def train_batch_with_accumulation(ecgs, text_embeddings, model, device, criterion, optimizer, decoder, accumulation_steps=8):
+def train_batch_with_accumulation(ecgs, text_embeddings, model, device, criterion, optimizer, decoder, accumulation_steps=64):
     model.train()
     optimizer.zero_grad()  # Initialize gradient to zero
 
@@ -134,7 +134,7 @@ def train_loop(dataloader, fetch_func, model, loss_fn, optimizer, device, decode
         loss = train_batch_with_accumulation(ecgs=X, text_embeddings=text_embedding, model=model, device=device, criterion=loss_fn, optimizer=optimizer, decoder=decoder)
         total_loss += loss
 
-        if batch % 100 == 0:
+        if batch % 10 == 0:
             loss, current = loss, (batch + 1) * len(X)
             logger.info(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
     
@@ -204,7 +204,7 @@ if __name__ == '__main__':
     H_ = {
         'embed_dim': 64, 
         'lr': 1e-3,  
-        'batch_size': 2048, 
+        'batch_size': 16384, 
         'epochs': 10, 
         'load_from_pretrain': False
     }

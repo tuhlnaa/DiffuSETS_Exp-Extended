@@ -5,13 +5,12 @@ import time
 import os
 import numpy as np
 
-from utils.text_to_emb import get_text_embedding 
 
 def train_epoch_channels(dataloader, 
                          unet, 
                          diffused_model, 
                          optimizer, 
-                        #  text_embed_table, 
+                         scheduler,
                          device, 
                          decoder, 
                          condition, 
@@ -20,20 +19,6 @@ def train_epoch_channels(dataloader,
     unet.train()
     for _ in range(number_of_repetition):
         for data, label in dataloader:
-            # text_embed = []
-            # for text in label['text']:
-            #     input_ = text.split('|')[0]
-            #     # print(input_)
-            #     if len(input_) >= 1 and input_[-1] != '.':
-            #         input_ += '.'
-            #     if len(text_embed_table.loc[text_embed_table['text'] == input_, 'embed']) > 0:
-            #         embed = text_embed_table.loc[text_embed_table['text'] == input_, 'embed'].values[0]
-            #     else:
-            #         print(1)
-            #         embed = text_embed_table.iloc[-1]['embed']
-            #     embed = eval(embed)
-            #     text_embed.append(embed)
-
             text_embed = label['text_embed']
             text_embed = np.array(text_embed)
             text_embed = text_embed.transpose(1, 0) 
@@ -45,7 +30,9 @@ def train_epoch_channels(dataloader,
             # (B, L, C) -> (B, C, L)
             ecg = decoder(latent).transpose(-1, -2)
 
-            t = torch.randperm(diffused_model.config.num_train_timesteps-2)[:ecg.shape[0]] + 1 
+            # t = torch.randperm(diffused_model.config.num_train_timesteps-2)[:ecg.shape[0]] + 1 
+            # compatible with larger batch size
+            t = torch.randint(1, diffused_model.config.num_train_timesteps - 1, (latent.shape[0],))
 
             noise = torch.randn(ecg.shape, device=ecg.device)
             xt = diffused_model.add_noise(ecg, noise, t)
@@ -100,6 +87,7 @@ def train_epoch_channels(dataloader,
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+            scheduler.step()
 
     return sum(loss_list) / len(loss_list)
 
@@ -110,7 +98,6 @@ def train_model_novae(meta,
                 diffused_model, 
                 unet, 
                 decoder, 
-                # text_embed_table, 
                 h_, 
                 logger):
     
@@ -118,6 +105,7 @@ def train_model_novae(meta,
     decoder = decoder.to(device)
     unet = unet.to(device)
     optimizer = torch.optim.AdamW(params=unet.parameters(), lr=h_['lr'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=h_['epochs']*len(dataloader), eta_min=0.1*h_['lr'])
     min_loss = 100
 
     start_time = time.time()
@@ -128,12 +116,12 @@ def train_model_novae(meta,
                                          unet=unet, 
                                          diffused_model=diffused_model, 
                                          optimizer=optimizer, 
-                                        #  text_embed_table=text_embed_table,
+                                         scheduler=scheduler,
                                          device=device, 
                                          decoder=decoder, 
                                          condition=meta['condition'], 
                                          number_of_repetition=1)
-        logger.info(f'Epoch: {i}, mean loss: {mean_loss}')
+        logger.info(f'Epoch: {i}, mean loss: {mean_loss:.4f}, lr: {scheduler.get_last_lr()[0]:.6f}')
         if (mean_loss < min_loss):
             min_loss = mean_loss
             torch.save(unet.state_dict(), os.path.join(save_weights_path, 'unet_best.pth'))

@@ -242,8 +242,7 @@ class ECGconditional(nn.Module):
         self.num_levels = num_levels
         input_channels_list = []
         output_channels_list = []
-        n_heads_list = [8, 8, 4, 4, 4, 4, 8, 8]
-        n_hidden_state_list = [16, 16, 16, 32, 32, 16, 16, 16]
+        n_heads = 8
 
         for i in range(num_levels - 1):
             input_channels_list.append(n_channels * 2**i)  
@@ -261,6 +260,10 @@ class ECGconditional(nn.Module):
             k = 2 * (num_levels - 1) - i - 1
             input_channels_list[k] += output_channels_list[i]
 
+        n_hidden_state_list = [channel * 2 for channel in input_channels_list]
+        # print(input_channels_list)
+        # print(n_hidden_state_list)
+
         # Only odd filter kernels allowed
         assert(kernel_size % 2 == 1)
         self.downsampling_blocks = nn.ModuleList()
@@ -270,7 +273,7 @@ class ECGconditional(nn.Module):
             self.downsampling_blocks.append(
                 DownsamplingBlock(n_inputs=input_channels_list[i], n_outputs=output_channels_list[i],
                             number_of_diffusions=number_of_diffusions,
-                            kernel_size=kernel_size, n_heads=n_heads_list[i], 
+                            kernel_size=kernel_size, n_heads=n_heads, 
                             hidden_dim=n_hidden_state_list[i], text_embed_dim=text_embed_dim))
 
         self.bottelneck = BottleneckNet(n_channels=input_channels_list[num_levels],
@@ -281,12 +284,12 @@ class ECGconditional(nn.Module):
             UpsamplingBlock(n_inputs=input_channels_list[i], n_outputs=output_channels_list[i],
                                   number_of_diffusions=number_of_diffusions,
                                   kernel_size=kernel_size, up_dim=input_channels_list[i],
-                                  n_heads=n_heads_list[i], hidden_dim=n_hidden_state_list[i], text_embed_dim=text_embed_dim))
+                                  n_heads=n_heads, hidden_dim=n_hidden_state_list[i], text_embed_dim=text_embed_dim))
         for i in range(self.num_levels, 2*self.num_levels - 2):
             self.upsampling_blocks.append(
                 UpsamplingBlock(n_inputs=input_channels_list[i], n_outputs=output_channels_list[i],
                                   number_of_diffusions=number_of_diffusions,
-                                  kernel_size=kernel_size, n_heads=n_heads_list[i], hidden_dim=n_hidden_state_list[i], text_embed_dim=text_embed_dim))
+                                  kernel_size=kernel_size, n_heads=n_heads, hidden_dim=n_hidden_state_list[i], text_embed_dim=text_embed_dim))
 
 
         self.output_conv = nn.Sequential(nn.Conv1d(output_channels_list[-1], n_channels, 3, padding="same"), nn.Mish(),

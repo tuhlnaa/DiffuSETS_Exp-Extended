@@ -26,17 +26,17 @@ def prompt_propcess(text):
     # print(prompt_text)
     return prompt_text 
 
-def get_text_embedding(text_batch, text_embed_table): 
-    # text_batch -> (B, 1536) 
-    text_embed = [] 
-    for text in text_batch:
-        prompt_text = prompt_propcess(text) 
-        if len(text_embed_table.loc[text_embed_table['text'] == prompt_text, 'embed']) > 0:
-            embed = text_embed_table.loc[text_embed_table['text'] == prompt_text, 'embed'].values[0]
-        else:
-            print(1)
-            embed = text_embed_table.iloc[-1]['embed']
-        embed = eval(embed)
-        text_embed.append(embed)
+# def get_text_embedding(text_batch, text_embed_table): 
+#     # text_batch -> (B, 1536) 
+#     text_embed = [] 
+#     for text in text_batch:
+#         prompt_text = prompt_propcess(text) 
+#         if len(text_embed_table.loc[text_embed_table['text'] == prompt_text, 'embed']) > 0:
+#             embed = text_embed_table.loc[text_embed_table['text'] == prompt_text, 'embed'].values[0]
+#         else:
+#             print(1)
+#             embed = text_embed_table.iloc[-1]['embed']
+#         embed = eval(embed)
+#         text_embed.append(embed)
 
-    return text_embed 
+#     return text_embed 

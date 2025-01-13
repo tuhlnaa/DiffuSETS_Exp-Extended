@@ -1,0 +1,40 @@
+{ 
+    "meta": {
+        "exp_name": "DiffuSETS", 
+        "exp_type": "all", 
+        "condition": true, 
+        "vae_latent": true, 
+        "device": "cuda:1" 
+    }, 
+
+    "dependencies": {
+        "dataset_path": "./prerequisites/mimic_vae_0_new.pt",
+        "checkpoints_dir": "./checkpoints", 
+        "vae_path": "./prerequisites/vae_model.pth"
+    },
+
+    "hyper_para": {
+        "epochs": 200, 
+        "lr": 1e-4, 
+        "batch_size": 2048, 
+        "num_train_steps": 1000, 
+        "unet_kernel_size": 7, 
+        "unet_num_level": 7, 
+        "beta_start": 0.00085, 
+        "beta_end": 0.0120
+    }, 
+
+    "inference_setting": {
+        "inference_timestep": 1000, 
+        "gen_batch": 4, 
+        "save_img": true, 
+        "verbose": false,
+        "save_path": "./test_sample_all", 
+        "unet_path": "./prerequisites/unet_all.pth", 
+        "text": "sinus rhythm|abnormal ecg.", 
+        "OPENAI_API_KEY": "", 
+        "age": 50,
+        "hr": 50, 
+        "gender": "M"
+    }
+}

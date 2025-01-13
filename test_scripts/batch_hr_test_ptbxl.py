@@ -13,9 +13,19 @@ from unet.unet_nocondition import ECGnocondition
 from torch.utils.data import DataLoader
 from diffusers import DDPMScheduler
 import os
+from wfdb import processing
 
-from utils.text_to_emb import prompt_propcess  
 
+def fetch_text_embedding_ptbxl(text:str, embedding_dict_ptbxl):
+    text = text.split('|')[0]
+    text = text.replace('The report of the ECG is that ', '')
+    try:
+        text_embed = embedding_dict_ptbxl.loc[embedding_dict_ptbxl['report'] == text, 'text_embed'].values[0]
+        text_embed = eval(text_embed)
+    except IndexError:
+        text_embed = [0] * 1536
+    # print(text_embed)
+    return torch.tensor(text_embed)
     
 def generation_from_net(diffused_model: DDPMScheduler, net: ECGconditional, batch_size, device, text_embed, condition, use_vae_latent):
     net.eval()
@@ -39,54 +49,64 @@ def generation_from_net(diffused_model: DDPMScheduler, net: ECGconditional, batc
                                      sample=xi)['prev_sample']
     return xi 
 
-def batch_generate_ECG(nums, 
-                       batch, 
-                       save_path, 
-                       exp_type, 
-                       test_dataloader, 
-                       net, 
-                       diffused_model, 
-                       device,  
-                       use_condition, 
-                       use_vae_latent, 
-                       verbose=False):
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
+def detect_hr(ecg):
+    fs = 102.4
+    for lead in range(12):
+        xqrs = processing.XQRS(sig=ecg[:, lead], fs=fs)
+        xqrs.detect(verbose=False)
+        qrs_inds = xqrs.qrs_inds
+        if len(qrs_inds) > 1:
+            rr_intervals = np.diff(qrs_inds) / fs
+            heart_rate = 60 / np.mean(rr_intervals)
+            break
+    
+    return heart_rate
 
-    assert exp_type in ['normal', 'af', 'pvc']
+def batch_hr_test(nums, 
+                batch, 
+                test_dataloader, 
+                net, 
+                diffused_model, 
+                decoder, 
+                device,  
+                use_condition, 
+                use_vae_latent, 
+                verbose=False):
+
     index = 0
-    result_array = []  
-    # embedding_dict_mimic= pd.read_csv('./mimic_iv_text_embed.csv')
+    embedding_dict_ptbxl= pd.read_csv('./prerequisites/ptbxl_text_embed.csv')
+    loss = 0
     for _, (x, y) in enumerate(test_dataloader):
         # input_ = x.squeeze(0).detach().numpy()
         # encoder_noise = torch.randn(latent_shape)
         # latent, mu, log_var = encoder(x)
         if index == nums:
             break
+        index += 1
 
         latent = x
-        text = y['text'][0].lower()
+        text = y['text'][0]
         gender = 1 if y['gender'] == 'M' else 0
         gender = torch.tensor([gender])
         age = y['age']
         hr = y['hr']
 
-        # if not ('pvc' in text or 'ventricular premature' in text or 'premature ventricular' in text):
-        #     continue 
-        # if not ('atrial fibrillation') in text:
-        #     continue
-        if 'normal ecg' in text:
-            continue
 
-        print(text)
-        index += 1
+        text = text.split('|')[0]
+        text = text.replace('The report of the ECG is that ', '')
+        print('Diagnosis: The report of the ECG is that {' + text + '}.')
+        try:
+            text_embed = embedding_dict_ptbxl.loc[embedding_dict_ptbxl['report'] == text, 'text_embed'].values[0]
+            text_embed = eval(text_embed)
+        except IndexError:
+            text_embed = [0] * 1536
+            print('text_embedding missing Encoutered')
 
-        text_embed = y['text_embed']
         text_embed = np.array(text_embed)
         text_embed = np.repeat(text_embed[np.newaxis, :], 1, axis=0)
         text_embed = np.repeat(text_embed[np.newaxis, :, :], batch, axis=0)
 
-        text_embed = torch.Tensor(text_embed).squeeze(-1)
+        text_embed = torch.Tensor(text_embed)
         text_embed = text_embed.to(device)
         if verbose:
             print(text_embed.shape)
@@ -110,32 +130,48 @@ def batch_generate_ECG(nums,
 
         latent = generation_from_net(diffused_model, net, batch_size=batch, device=device, text_embed=text_embed, condition=condition, use_vae_latent=use_vae_latent)
 
-        result_array.append(latent.detach().cpu().numpy()) 
-    
-    result_array = np.concatenate(result_array, axis=0)
-    print(result_array.shape)
-    np.save(os.path.join(save_path, f'completion_{exp_type}.npy'), result_array)
+        if use_vae_latent: 
+            gen_ecg = decoder(latent)
+        else: 
+            gen_ecg = latent.transpose(-1, -2) 
+
+        hr_list = []
+        for j in range(batch):
+            output = gen_ecg[j]
+
+            output_ = output.squeeze(0).detach().cpu().numpy()
+            hr = detect_hr(output_)
+            hr_list.append(hr)
+
+        hr_list = np.array(hr_list)
+        loss += np.abs(hr_list - hr).mean() 
+
+    loss /= nums
+    print(loss) 
+
+
 
 if __name__ == "__main__":
-    nums = 20 # 选用的mimic样本数
-    batch = 512 #使用[每个样本对应的condition]生成的ECG个数
-    use_vae_latent = True 
+    nums = 10 
+    batch = 5 
+    use_vae_latent = False 
     use_condition = True 
-    exp_type = 'normal'
-
-    save_path = './prerequisites/clf_data'
-    device_str = "cuda:2"
+    save_img = False
+    device_str = "cuda:1"
+    unet_path = './prerequisites/unet_all.pth'
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
 
-    mimic_path = './prerequisites/mimic_vae_lite_0_new.pt'
-    mimic_test_data = DictDataset(path=mimic_path)
-    mimic_test_dataloader = DataLoader(mimic_test_data, batch_size=1, shuffle=True)
+    ptbxl_path = './prerequisites/ptbxl_vae.pt'
+    test_data = DictDataset(path=ptbxl_path)
+    test_dataloader = DataLoader(test_data, batch_size=1, shuffle=True)
 
     n_channels = 4 if use_vae_latent else 12 
     num_train_steps = 1000
-    net = ECGconditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
+    if use_condition: 
+        net = ECGconditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
+    else:
+        net = ECGnocondition(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
 
-    unet_path = './prerequisites/unet_all.pth'
     net.load_state_dict(torch.load(unet_path, map_location=device))
     net = net.to(device)
 
@@ -143,18 +179,17 @@ if __name__ == "__main__":
     diffused_model.set_timesteps(1000)
 
     decoder = VAE_Decoder()
-    vae_path = './prerequisites/vae_model.pth'
+    vae_path = './checkpoints/vae_1/vae_model.pth'
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])
     decoder = decoder.to(device)
 
-    batch_generate_ECG(nums=nums, 
-                       batch=batch, 
-                       save_path=save_path, 
-                       exp_type=exp_type,
-                       test_dataloader=mimic_test_dataloader, 
-                       net=net, 
-                       diffused_model=diffused_model, 
-                       device=device,
-                       use_condition=use_condition, 
-                       use_vae_latent=use_vae_latent)
+    batch_hr_test(nums=nums, 
+                    batch=batch, 
+                    test_dataloader=test_dataloader, 
+                    net=net, 
+                    diffused_model=diffused_model, 
+                    decoder=decoder, 
+                    device=device,
+                    use_condition=use_condition, 
+                    use_vae_latent=use_vae_latent)

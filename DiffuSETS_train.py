@@ -52,8 +52,6 @@ def main():
     train_dataset = DictDataset(roots['dataset_path']) 
     train_dataloader = DataLoader(train_dataset, batch_size=h_['batch_size'])
 
-    # text_embed_table = pd.read_csv(roots['text_embed_path'])
-
     use_vae_latent = meta['vae_latent']     
     n_channels = 4 if use_vae_latent else 12 
 
@@ -76,7 +74,6 @@ def main():
                     dataloader=train_dataloader, 
                     diffused_model=diffused_model, 
                     unet=unet, 
-                    # text_embed_table=text_embed_table, 
                     h_=h_, 
                     logger=logger)
     else:
@@ -93,7 +90,6 @@ def main():
                           diffused_model=diffused_model, 
                           unet=unet, 
                           decoder=decoder, 
-                        #   text_embed_table=text_embed_table, 
                           h_=h_, 
                           logger=logger)
 
