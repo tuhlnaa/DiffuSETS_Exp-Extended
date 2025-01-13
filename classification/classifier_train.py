@@ -29,7 +29,7 @@ def train_batch(ecgs, labels, model, criterion, optimizer):
         
     return loss
 
-def train_loop(dataloader, model, loss_fn, optimizer, device, decoder=None):
+def train_loop(dataloader, model, loss_fn, optimizer, scheduler, device, decoder=None):
     size = len(dataloader.dataset)
     # Set the model to training mode - important for batch normalization and dropout layers
     # Unnecessary in this situation but added for best practices
@@ -47,11 +47,12 @@ def train_loop(dataloader, model, loss_fn, optimizer, device, decoder=None):
         labels = labels.to(device)
 
         loss = train_batch(ecgs=X, labels=labels, model=model,  criterion=loss_fn, optimizer=optimizer)
+        scheduler.step()
         total_loss += loss.detach()
 
         if batch % 25 == 0:
             loss, current = loss, (batch + 1) * len(X)
-            logger.info(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+            logger.info(f"loss: {loss:>7f}  lr: {scheduler.get_last_lr()[0]:.6f} [{current:>5d}/{size:>5d}]")
     
     return total_loss / size
 
@@ -82,6 +83,7 @@ def test_loop(dataloader, model, device, decoder):
 
     all_label = [] 
     all_pred = [] 
+    all_score = []
     for batch, (X, y) in enumerate(dataloader): 
         X = X.to(device) 
         if decoder: 
@@ -92,22 +94,23 @@ def test_loop(dataloader, model, device, decoder):
         logit = model(X) 
         pred = torch.argmax(logit, dim=-1).cpu().numpy() 
 
+        all_score.extend(logit[:, 0].cpu().numpy())
         all_pred.extend(pred)
 
     acc = np.sum(np.equal(all_pred, all_label)) / size 
     cm = confusion_matrix(all_label, all_pred) 
     f1 = f1_score(all_label, all_pred, average='macro')
 
-    return acc, f1, cm 
+    return acc, f1, cm, all_score, all_label
 
 
 if __name__ == '__main__':
 
     k_max = 0
     exp_type = 'normal'
-    model_type = 'Transformer' 
-    is_cmp = ''
-    no_weight = False
+    model_type = 'ResNet' 
+    is_cmp = '_cmp'
+    is_weighted = False
     assert exp_type in ['normal', 'af', 'pvc']
     assert model_type in ['ResNet', 'Transformer']
     assert (is_cmp == '') or (is_cmp == '_cmp')
@@ -135,26 +138,26 @@ if __name__ == '__main__':
     H_ = {
         'lr': 1e-3,  
         'batch_size': 256, 
-        'epochs': 10, 
+        'epochs': 20, 
         'load_from_pretrain': False, 
         'exp_type': exp_type, 
         'model_type': model_type, 
         'is_cmp': is_cmp, 
-        'no_weight': no_weight
+        'weighted': is_weighted
     }
     logger.info(H_)
 
     is_save = True
 
     if torch.cuda.is_available():
-        device = torch.device('cuda:4')
+        device = torch.device('cuda:1')
     else:
         device = torch.device('cpu')
     logger.info(f'Using device: {device}')
 
-    train_dataset_path = f'./prerequisites/mimic_vae_clf_{exp_type}_train{is_cmp}.pt'
-    vali_dataset_path = f'./prerequisites/mimic_vae_clf_{exp_type}_valid.pt'
-    test_dataset_path = f'./prerequisites/mimic_vae_clf_{exp_type}_test.pt'
+    train_dataset_path = f'./prerequisites/clf_data/mimic_vae_clf_{exp_type}_train{is_cmp}.pt'
+    vali_dataset_path = f'./prerequisites/clf_data/mimic_vae_clf_{exp_type}_valid.pt'
+    test_dataset_path = f'./prerequisites/clf_data/mimic_vae_clf_{exp_type}_test.pt'
     train_dataset = DictDataset(train_dataset_path)
     vali_dataset = DictDataset(vali_dataset_path)
     test_dataset = DictDataset(test_dataset_path) 
@@ -164,7 +167,7 @@ if __name__ == '__main__':
 
     decoder = None
     decoder = VAE_Decoder()
-    vae_path = './checkpoints/vae_1/vae_model.pth'
+    vae_path = './prerequisites/vae_model.pth'
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])
     decoder = decoder.to(device)
@@ -175,7 +178,7 @@ if __name__ == '__main__':
         clf_model = TransformerECG()
 
     clf_model.to(device)
-    if is_cmp or no_weight: 
+    if is_cmp or not is_weighted: 
         class_weight = torch.tensor([1, 1]) 
     elif exp_type == 'af': 
         class_weight = torch.tensor([10, 1])
@@ -187,12 +190,13 @@ if __name__ == '__main__':
 
     loss_fn = nn.CrossEntropyLoss(weight=class_weight)
     optimizer = torch.optim.AdamW(clf_model.parameters(), lr=H_['lr'], weight_decay=3e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_dataloader) * H_['epochs'])
 
     min_loss = float("inf")
     for t in range(H_['epochs']):
         logger.info(f"Epoch {t+1}\n-------------------------------")
         # Setting decoder to None if using original ECG
-        epoch_train_loss = train_loop(train_dataloader, clf_model, loss_fn, optimizer, device, decoder=decoder)
+        epoch_train_loss = train_loop(train_dataloader, clf_model, loss_fn, optimizer, scheduler, device, decoder=decoder)
         logger.info(f"Evaluating validation loss...")
         # Setting decoder to None if using original ECG
         epoch_vali_loss = vali_loop(test_dataloader, clf_model, loss_fn, device, decoder=decoder)
@@ -208,8 +212,10 @@ if __name__ == '__main__':
     # load best model 
     logger.info(f"Loading the best {model_type} model")
     model_best = clf_model.load_state_dict(torch.load(save_path, map_location=device))
-    acc, f1, cm = test_loop(test_dataloader, clf_model, device, decoder) 
+    acc, f1, cm, all_score, all_label = test_loop(test_dataloader, clf_model, device, decoder) 
     np.save(os.path.join(save_weights_path, 'cm.npy'), cm) 
+    np.save(os.path.join(save_weights_path, 'all_score.npy'), all_score) 
+    np.save(os.path.join(save_weights_path, 'all_label.npy'), all_label) 
     logger.info(f"{cm[0][0]}\t{cm[0][1]}\n{cm[1][0]}\t{cm[1][1]}")
-    logger.info(f"Acc: {acc}\n F1: {f1}")
+    logger.info(f"Acc: {acc:.3f}\n F1: {f1:.3f}")
     logger.info("done!")

@@ -3,10 +3,11 @@ __pycache__
 *.out
 backup
 checkpoints/*
-config/*
+*.json
 *sample*
 *.pt
 *.csv
 *.pth 
 *.npy
 exp/
+figures/

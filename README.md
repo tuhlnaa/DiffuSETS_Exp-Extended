@@ -1,33 +1,38 @@
 # DiffuSETS
 
-Note: All the python commands below should be run at current directory i.e. `/Path/to/DiffuSETS/`
+![over_all_fig](./assets/Figure_1.png)
+
+Experiment code of paper [**_DiffuSETS: 12-lead ECG Generation Conditioned on Clinical Text Reports and Patient-Specific Information_**](http://arxiv.org/abs/2501.05932)
+
+**Prerequisities** can be found at [Our Huggingface🤗 Hub](https://huggingface.co/Laiyf/DiffuSETS). Put them under the root of this repo as `./prerequisites/`.
 
 ## Inference 
 
-To run inference:
-
+Run inference accessing OpenAI api (more flexible):
 ```sh
-python DiffuSETS_inference.py path/to/config.json
+python DiffuSETS_inference.py config/all.json
 ```
 
-For configuration settings see this [section](#configurations).
+For configuration and input settings see this [section](#configurations).
 
-For prequisities and pretrained UNET model, you can find them [here](https://huggingface.co/Laiyf/DiffuSETS). Just put them in `./prerequisites/` if you want to use them.
+Quick generation using pre-extracted conditions (no api requesting, but make sure you have downloaded prerequisites for inference):
+```sh
+python -m test_scripts.diversity
+```
 
 ## Training
 
 Training script is `DiffuSETS_train.py`, can be launched through 
 
 ```sh
-python DiffuSETS_train.py path/to/config.json
+python DiffuSETS_train.py config/all.json
 ```
 
 For configuration settings see this [section](#configurations).
 
-For prequisities, you can find them [here](https://huggingface.co/Laiyf/DiffuSETS). Just put them in `./prerequisites/` if you want to use them.
+## Experiment
 
-The training scripts can take in two kinds of preprocessed dataset, dictionary format and single item slices style, while we offer the dictionary [here](https://huggingface.co/Laiyf/DiffuSETS). Further introduction can be seen in this [section](#dataset). 
-
+All scripts concerning with our experiments are included in `./test_scripts/`, please take a look freely.
 
 ## Configurations
 
@@ -35,26 +40,23 @@ The scripts of `DiffuSETS_train.py` and `DiffuSETS_inference.py` rely on configu
 
 Note that training and inference settings are written in ONE configuration file, so as to ensure the hyper parameters of UNET are the same.
 
-Below is a example of settings in `test.json` with detailed explanation , you can alter it to meet with your environment and design. Reminder: `@key` is comment to `key`, so there is no need to be included in the formal configuration file.
+Below is a example of settings with detailed explanation , you can alter it to meet with your environment and design. **Reminder**: `@key` is comment to `key`, so there is **NO** need to be included in the formal configuration file.
 
 ```json
 { 
     "meta": {
-        "exp_name": "test", 
+        "exp_name": "DiffuSETS", 
 
-        "exp_type": "unet", 
-        "@exp_type": "the name of experiment saving folders, i.e. checkpoints/unet_1/", 
-
+        "exp_type": "all", 
+        "@exp_type": "the name of experiment saving folders, can use to indicating the model type", 
+        
         "condition": true, 
         "@condition": "whether to use patient specific info",
 
         "vae_latent": true, 
         "@vae_latent": "generating latent or ECG", 
 
-        "device": "cuda:1", 
-
-        "use_dictdataset": true,  
-        "@use_dictdataset": "whether to use dictdataset"
+        "device": "cuda:1" 
     }, 
 
     "dependencies": { 
@@ -63,10 +65,8 @@ Below is a example of settings in `test.json` with detailed explanation , you ca
 
         "checkpoints_dir": "./checkpoints", 
 
-        "vae_path": "./text2ecg/prerequisites/vae_model.pth", 
+        "vae_path": "./prerequisites/vae_model.pth", 
         "@vae_path": "ALWAYS need to be specified no matter whether generating latent or not", 
-
-        "text_embed_path": "./text2ecg/prerequisites/mimic_iv_text_embed.csv"
     },
 
     "hyper_para": {
@@ -75,7 +75,7 @@ Below is a example of settings in `test.json` with detailed explanation , you ca
         "batch_size": 512, 
         "num_train_steps": 1000, 
         "unet_kernel_size": 7, 
-        "unet_num_level": 5, 
+        "unet_num_level": 7, 
         "beta_start": 0.00085, 
         "beta_end": 0.0120
     }, 
@@ -95,51 +95,12 @@ Below is a example of settings in `test.json` with detailed explanation , you ca
         "text": "Sinus rhythm.", 
         "@text": "text report for generation", 
 
-        "text_embed_setting": {
-            "use_api": false, 
-            "@use_api": "whether to request OpenAI API", 
+        "OPENAI_API_KEY": "",  
+        "@OPENAI_API_KEY": "Fill with your API KEY", 
 
-            "OPENAI_API_KEY": "",  
-            "@OPENAI_API_KEY": "if yes, fill with your API KEY", 
-
-            "loacal_text_embed_path": "./text2ecg/prerequisites/mimic_iv_text_embed.csv", 
-            "@local_text_embed_path": "if not, interrogate locally"
-        },
         "age": 50, 
         "hr": 90, 
         "gender": "M"
     }
 }
 ```
-
-## Dataset
-
-There are two kinds of dataset which contains pre-encoded latents coupled with text report and related patient specific information. We should prepare either of them ahead of time to speed up the training phase. 
-
-The first kind is a dictionary file whose keys are indices and values are the training samples. We offer the file of dictionary dataset [here](https://huggingface.co/Laiyf/DiffuSETS) associated with the VAE model, You can also create your dictionary datset related to your own VAE model following the instruction [here](#building-your-own-dictdataset). The disk usage of our VAE encoding mimic ecg dataset is about 2 GB, which means it will take up 2 GB after loading into the memory, please check your hardware before running the scripts.
-
-The second kind is spliting the dictionary into single '.pt' items and place them under certain folder, you can use this pattern if the memory limits. See the `VAE_MIMIC_IV_ECG_DATASET` class in `./dataset/mimic_iv_ecg_dataset.py` for implementation details.
-
-## DIY 
-
-### Training your own VAE model 
-
-The VAE model is trained by original mimic iv ecg dataset, please refer to `./vae/vae_train.py` for dependency specification. Use the command below to start training phase, whose result will be saved in `./checkpoints/vae_#` by default.
-
-```sh
-python -m vae.vae_train
-```
-
-### Building your own DictDataset
-
-1.Update the VAE path and original mimic iv and mimic ecg dataset path in `./utils/vae_encoding.py`, use the following command to initiate script.
-
-```sh
-python -m utils.vae_encoding 
-```
-
-2.The label of sample in the dictionary attained in the first step contains all of the reports related to. If you want to split every report to a sampple, please concern running
-```sh
-python -m utils.split_dataset
-```
-This script leads to the dataset of 2,742,409 entries, which is exactly the form we have adapted to train our UNET in DiffuSETS.

@@ -13,9 +13,17 @@ from unet.unet_nocondition import ECGnocondition
 from torch.utils.data import DataLoader
 from diffusers import DDPMScheduler
 import os
+import argparse
 
 from utils.text_to_emb import prompt_propcess  
 
+
+def find_power_of_ten(number):
+    if number > 0:
+        power = math.log(number, 10)
+        return math.ceil(power)
+    else:
+        return "Number must be greater than 0"
     
 def generation_from_net(diffused_model: DDPMScheduler, net: ECGconditional, batch_size, device, text_embed, condition, use_vae_latent):
     net.eval()
@@ -23,7 +31,8 @@ def generation_from_net(diffused_model: DDPMScheduler, net: ECGconditional, batc
     dim = 128 if use_vae_latent else 1024
     xi = torch.randn(batch_size, n_channels, dim)
     xi = xi.to(device)
-    timesteps = tqdm(diffused_model.timesteps)
+    # timesteps = tqdm(diffused_model.timesteps)
+    timesteps = diffused_model.timesteps
     for _, i in enumerate(timesteps):
         t = i*torch.ones(batch_size, dtype=torch.long)
         with torch.no_grad():
@@ -42,20 +51,22 @@ def generation_from_net(diffused_model: DDPMScheduler, net: ECGconditional, batc
 def batch_generate_ECG(nums, 
                        batch, 
                        save_path, 
-                       exp_type, 
                        test_dataloader, 
                        net, 
                        diffused_model, 
+                       decoder, 
                        device,  
                        use_condition, 
                        use_vae_latent, 
+                       save_img=False, 
                        verbose=False):
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
-    assert exp_type in ['normal', 'af', 'pvc']
+    # if not save_img:
+    #     print("Ignore image drawing and saving...")
+
     index = 0
-    result_array = []  
     # embedding_dict_mimic= pd.read_csv('./mimic_iv_text_embed.csv')
     for _, (x, y) in enumerate(test_dataloader):
         # input_ = x.squeeze(0).detach().numpy()
@@ -63,6 +74,7 @@ def batch_generate_ECG(nums,
         # latent, mu, log_var = encoder(x)
         if index == nums:
             break
+        index += 1
 
         latent = x
         text = y['text'][0].lower()
@@ -70,23 +82,25 @@ def batch_generate_ECG(nums,
         gender = torch.tensor([gender])
         age = y['age']
         hr = y['hr']
+        subject_id = y['subject_id']
 
-        # if not ('pvc' in text or 'ventricular premature' in text or 'premature ventricular' in text):
-        #     continue 
-        # if not ('atrial fibrillation') in text:
-        #     continue
-        if 'normal ecg' in text:
-            continue
+        features_file_content = {}
 
-        print(text)
-        index += 1
+
+        text = prompt_propcess(text)
 
         text_embed = y['text_embed']
+
+        features_file_content.update({"batch": batch}) 
+        features_file_content.update({"subject_id": subject_id.item()}) 
+        features_file_content.update({"Diagnosis": text}) 
+
         text_embed = np.array(text_embed)
         text_embed = np.repeat(text_embed[np.newaxis, :], 1, axis=0)
         text_embed = np.repeat(text_embed[np.newaxis, :, :], batch, axis=0)
 
         text_embed = torch.Tensor(text_embed).squeeze(-1)
+        features_file_content.update({"text_embed": str(text_embed.tolist())}) 
         text_embed = text_embed.to(device)
         if verbose:
             print(text_embed.shape)
@@ -95,6 +109,8 @@ def batch_generate_ECG(nums,
             condition = {'gender': gender, 'age': age, 'heart rate': hr}
 
             for key in condition:
+                features_file_content.update({key: condition[key].item()}) 
+
                 condition[key] = np.array([condition[key]])
                 condition[key] = np.repeat(condition[key][np.newaxis, :], batch, axis=0)
                 if verbose:
@@ -108,24 +124,91 @@ def batch_generate_ECG(nums,
         else:
             condition=None
 
+        features_file_content.update({"Ori Latent": str(np.array(latent).tolist())}) 
         latent = generation_from_net(diffused_model, net, batch_size=batch, device=device, text_embed=text_embed, condition=condition, use_vae_latent=use_vae_latent)
+        features_file_content.update({"Gen Latent": str(np.array(latent.cpu()).tolist())}) 
 
-        result_array.append(latent.detach().cpu().numpy()) 
-    
-    result_array = np.concatenate(result_array, axis=0)
-    print(result_array.shape)
-    np.save(os.path.join(save_path, f'completion_{exp_type}.npy'), result_array)
+        number_str = str(index).zfill(find_power_of_ten(nums))
+        save_sample_path = os.path.join(save_path, number_str)
+        if not os.path.exists(save_sample_path):
+            os.makedirs(save_sample_path)
+
+        if save_img:
+            input_ = decoder(x.to(device))
+            input_ = input_.squeeze(0).detach().cpu().numpy()
+            wfdb.plot_items(input_, figsize=(10, 10), title="Original ECG") 
+            plt.savefig(os.path.join(save_sample_path, 'Original ECG.png'))
+            plt.close()
+
+            if use_vae_latent: 
+                gen_ecg = decoder(latent)
+            else: 
+                gen_ecg = latent.transpose(-1, -2) 
+
+            for j in range(batch):
+                output = gen_ecg[j]
+
+                output_ = output.squeeze(0).detach().cpu().numpy()
+                wfdb.plot_items(output_, figsize=(10, 10), title="Generated ECG")
+                plt.savefig(os.path.join(save_sample_path, f'{j} Generated ECG.png'))
+                plt.close()
+
+        with open(os.path.join(save_sample_path, 'features.json'), 'w') as json_file:
+            json.dump(features_file_content, json_file, indent=4)
+            # print(f"Features has been successfully written to {save_sample_path}features.json")
+
 
 if __name__ == "__main__":
-    nums = 20 # 选用的mimic样本数
-    batch = 512 #使用[每个样本对应的condition]生成的ECG个数
-    use_vae_latent = True 
-    use_condition = True 
-    exp_type = 'normal'
 
-    save_path = './prerequisites/clf_data'
-    device_str = "cuda:2"
+    parser = argparse.ArgumentParser(
+        description="A simple way to manage experiments"
+    )
+
+    # Add arguments
+    parser.add_argument(
+        "--exp_type", type=str, required=True,
+        help="experimetn type in ['all', 'noc', 'novae', 'nonoc']"
+    )
+    parser.add_argument(
+        "--nums", type=int, default=50,
+        help="num of generations"
+    )
+    parser.add_argument(
+        "--batch", type=int, default=10,
+        help="num of ecg in one generation"
+    )
+    parser.add_argument(
+        "--gpu_ids", type=int, default=0,
+        help="gpu index"
+    )
+    parser.add_argument(
+        "--save_img", action="store_true",
+        help="do not use patient specific condition"
+    )
+
+    args = parser.parse_args()
+    nums = args.nums 
+    batch = args.batch 
+
+    exp_type = args.exp_type
+    if exp_type == 'nonoc': 
+        use_vae_latent = False 
+        use_condition = False 
+    elif exp_type == 'noc': 
+        use_vae_latent = True 
+        use_condition = False 
+    elif exp_type == 'novae': 
+        use_vae_latent = False 
+        use_condition = True 
+    else: 
+        use_vae_latent = True 
+        use_condition = True 
+
+    save_img = args.save_img
+    save_path = f'./exp/batch/{exp_type}'
+    device_str = f"cuda:{args.gpu_ids}"
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
+    print(device)
 
     mimic_path = './prerequisites/mimic_vae_lite_0_new.pt'
     mimic_test_data = DictDataset(path=mimic_path)
@@ -133,9 +216,12 @@ if __name__ == "__main__":
 
     n_channels = 4 if use_vae_latent else 12 
     num_train_steps = 1000
-    net = ECGconditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
+    if use_condition: 
+        net = ECGconditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
+    else:
+        net = ECGnocondition(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
 
-    unet_path = './prerequisites/unet_all.pth'
+    unet_path = f'./checkpoints/{exp_type}_1/unet_best.pth'
     net.load_state_dict(torch.load(unet_path, map_location=device))
     net = net.to(device)
 
@@ -143,7 +229,7 @@ if __name__ == "__main__":
     diffused_model.set_timesteps(1000)
 
     decoder = VAE_Decoder()
-    vae_path = './prerequisites/vae_model.pth'
+    vae_path = './prerequistes/vae_model.pth'
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])
     decoder = decoder.to(device)
@@ -151,10 +237,13 @@ if __name__ == "__main__":
     batch_generate_ECG(nums=nums, 
                        batch=batch, 
                        save_path=save_path, 
-                       exp_type=exp_type,
                        test_dataloader=mimic_test_dataloader, 
                        net=net, 
                        diffused_model=diffused_model, 
+                       decoder=decoder, 
                        device=device,
                        use_condition=use_condition, 
-                       use_vae_latent=use_vae_latent)
+                       use_vae_latent=use_vae_latent, 
+                       save_img=save_img)
+    
+    print(f'{exp_type}: {nums} x {batch} done!')

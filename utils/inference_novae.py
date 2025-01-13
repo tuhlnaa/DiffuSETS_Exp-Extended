@@ -28,9 +28,19 @@ def generation_from_net(diffused_model, unet, batch_size, device, text_embed, co
                                      sample=xi)['prev_sample']
     return xi 
 
-def get_embedding_from_api(text: str):
+def get_embedding_from_api(text: str, openai_key: str): 
     text = prompt_propcess(text) 
-    return np.random.random(1536)
+
+    from openai import OpenAI
+    client = OpenAI(api_key=openai_key)
+
+    response = client.embeddings.create(
+        input=text,
+        model="text-embedding-ada-002"
+    )
+
+    embedding = np.array(response.data[0].embedding)
+    return embedding
 
 def batch_generate_ECG_novae(settings, 
                              unet, 
@@ -54,7 +64,7 @@ def batch_generate_ECG_novae(settings,
     features_file_content = {}
 
     print('Diagnosis: The report of the ECG is that {' + text + '}.')
-    text_embed = get_embedding_from_api(text)
+    text_embed = get_embedding_from_api(text, settings['OPENAI_API_KEY'])
 
     text_embed = np.array(text_embed)
     text_embed = np.repeat(text_embed[np.newaxis, :], 1, axis=0)
@@ -68,14 +78,14 @@ def batch_generate_ECG_novae(settings,
     if verbose:
         print(text_embed.shape)
 
-    features_file_content.update({"batch": batch}) # batch_size
-    features_file_content.update({"Diagnosis": text}) # 临床文本报告原文，无prompts
+    features_file_content.update({"batch": batch}) 
+    features_file_content.update({"Diagnosis": text}) 
 
     condition_dict = None
     if condition:
         condition_dict = {'gender': gender, 'age': age, 'heart rate': hr}
         for key in condition_dict:
-            features_file_content.update({key: condition_dict[key]}) # key个大小为(batch, 1, 1)的向量
+            features_file_content.update({key: condition_dict[key]}) 
         condition_dict['gender'] = 1 if gender == 'M' else 0
 
         for key in condition_dict:
