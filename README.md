@@ -40,7 +40,7 @@ The scripts of `DiffuSETS_train.py` and `DiffuSETS_inference.py` rely on configu
 
 Note that training and inference settings are written in ONE configuration file, so as to ensure the hyper parameters of UNET are the same.
 
-Below is a example of settings with detailed explanation , you can alter it to meet with your environment and design. **Reminder**: `@key` is comment to `key`, so there is **NO** need to be included in the formal configuration file.
+Below is a example of settings with detailed explanation, you can alter it to meet with your environment and design. **Reminder**: `@key` is comment to `key`, so there is **NO** need to include them in the formal configuration file.
 
 ```json
 { 

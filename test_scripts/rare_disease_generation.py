@@ -42,7 +42,7 @@ if __name__ == '__main__':
     n_channels = 4
     num_train_steps = 1000
     net = ECGconditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
-    unet_path = './prerequistes/unet_all.pth'
+    unet_path = './prerequisites/unet_all.pth'
     net.load_state_dict(torch.load(unet_path, map_location=device))
     net = net.to(device)
 
@@ -50,7 +50,7 @@ if __name__ == '__main__':
     diffused_model.set_timesteps(1000)
 
     decoder = VAE_Decoder()
-    vae_path = './prerequistes/vae_model.pth'
+    vae_path = './prerequisites/vae_model.pth'
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])
     decoder = decoder.to(device)
