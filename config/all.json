@@ -4,13 +4,13 @@
         "exp_type": "all", 
         "condition": true, 
         "vae_latent": true, 
-        "device": "cuda:1" 
+        "device": "cuda" 
     }, 
 
     "dependencies": {
-        "dataset_path": "./prerequisites/mimic_vae_0_new.pt",
+        "dataset_path": "./checkpoints/mimic_vae_0_new.pt",
         "checkpoints_dir": "./checkpoints", 
-        "vae_path": "./prerequisites/vae_model.pth"
+        "vae_path": "./checkpoints/vae_model.pth"
     },
 
     "hyper_para": {
@@ -30,7 +30,7 @@
         "save_img": true, 
         "verbose": false,
         "save_path": "./test_sample_all", 
-        "unet_path": "./prerequisites/unet_all.pth", 
+        "unet_path": "./checkpoints/unet_all.pth", 
         "text": "sinus rhythm|abnormal ecg.", 
         "OPENAI_API_KEY": "", 
         "age": 50,

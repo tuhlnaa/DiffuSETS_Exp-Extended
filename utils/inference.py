@@ -30,7 +30,6 @@ def generation_from_net(diffused_model, net, batch_size, device, text_embed, con
 
 def get_embedding_from_api(text: str, openai_key: str): 
     text = prompt_propcess(text) 
-    print(text)
 
     from openai import OpenAI
     client = OpenAI(api_key=openai_key)
