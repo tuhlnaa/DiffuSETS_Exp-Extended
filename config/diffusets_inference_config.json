@@ -29,7 +29,7 @@
         "gen_batch": 4, 
         "save_img": true, 
         "verbose": false,
-        "save_path": "./test_sample_all", 
+        "save_path": "./output/test_sample_all", 
         "unet_path": "./checkpoints/unet_all.pth", 
         "text": "sinus rhythm|abnormal ecg.", 
         "OPENAI_API_KEY": "", 
