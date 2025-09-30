@@ -28,7 +28,7 @@
         "inference_timestep": 1000, 
         "gen_batch": 4, 
         "save_img": true, 
-        "verbose": false,
+        "verbose": true,
         "save_path": "./output/test_sample_all", 
         "unet_path": "./checkpoints/unet_all.pth", 
         "text": "sinus rhythm|abnormal ecg.", 
