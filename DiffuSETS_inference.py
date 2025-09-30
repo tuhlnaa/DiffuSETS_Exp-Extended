@@ -6,51 +6,13 @@ using diffusion models with optional VAE latent space encoding.
 """
 
 import argparse
-import json
 import os
 import torch
 
-from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from diffusers import DDPMScheduler
 from dotenv import load_dotenv
-
-
-class ConfigurationError(Exception):
-    """Raised when configuration is invalid or incomplete."""
-    pass
-
-
-class ConfigurationManager:
-    """Handles configuration loading and validation."""
-    
-    @staticmethod
-    def load_config(config_path: str) -> Dict[str, Any]:
-        """Load and validate configuration from JSON file."""
-        config_file = Path(config_path)
-        if not config_file.exists():
-            raise FileNotFoundError(f"Configuration file not found: {config_path}")
-        
-        with config_file.open('r') as f:
-            config = json.load(f)
-        
-        ConfigurationManager._augment_config(config)
-
-        return config
-    
-
-    @staticmethod
-    def _augment_config(config: Dict[str, Any]) -> None:
-        """Add environment variables and derived settings to configuration."""
-        # Add OpenAI API key from environment
-        openai_api_key = os.getenv('OPENAI_API_KEY')
-        if not openai_api_key:
-            raise ConfigurationError("OPENAI_API_KEY environment variable not set")
-        
-        config['inference_setting']['OPENAI_API_KEY'] = openai_api_key
-
-        # Add device to inference settings for convenience
-        config['inference_setting']['device'] = config['meta']['device']
+from utils.config import ConfigurationManager, RichDictPrinter, init_seeds
 
 
 class ModelLoader:
@@ -164,7 +126,7 @@ class DiffusionInference:
             )
 
 
-def create_argument_parser() -> argparse.ArgumentParser:
+def create_argument_parser(args=None) -> argparse.ArgumentParser:
     """Create and configure command line argument parser."""
     parser = argparse.ArgumentParser(
         description='DiffuSETS Inference - Generate ECG signals using diffusion models',
@@ -172,35 +134,28 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument('config', type=str, help='Path to the training configuration JSON file')
 
-    return parser
+    parsed_args = parser.parse_args()
+
+    # Load and validate configuration
+    config = ConfigurationManager.load_config(parsed_args.config)
+
+    # Print configuration
+    RichDictPrinter.print_dict(config, "Configuration")
+
+    return config
 
 
 def main() -> None:
     """Main entry point for the inference script."""
     # Load environment variables
     load_dotenv()
+    config = create_argument_parser()
     
-    # Parse command line arguments
-    parser = create_argument_parser()
-    args = parser.parse_args()
+    # Initialize and run inference
+    init_seeds()
+    inference_engine = DiffusionInference(config)
+    inference_engine.run_inference()
     
-    try:
-        # Load and validate configuration
-        config = ConfigurationManager.load_config(args.config)
-        
-        # Initialize and run inference
-        inference_engine = DiffusionInference(config)
-        inference_engine.run_inference()
-        
-    except (ConfigurationError, FileNotFoundError) as e:
-        print(f"Configuration Error: {e}")
-        return 1
-    except Exception as e:
-        print(f"Unexpected error during inference: {e}")
-        return 1
-    
-    return 0
-
 
 if __name__ == "__main__":
     main()
