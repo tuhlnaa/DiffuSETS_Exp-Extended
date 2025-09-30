@@ -12,7 +12,11 @@ import torch
 from typing import Dict, Any, Optional, Tuple
 from diffusers import DDPMScheduler
 from dotenv import load_dotenv
+
+# Import custom modules
 from utils.config import ConfigurationManager, RichDictPrinter, init_seeds
+from utils.inference_novae import batch_generate_ECG_novae
+from utils.inference import batch_generate_ECG
 
 
 class ModelLoader:
@@ -105,8 +109,6 @@ class DiffusionInference:
         """Execute the inference pipeline with VAE or direct inference."""
         if self.meta_config['vae_latent']:
             # Run inference with VAE latent space
-            from utils.inference import batch_generate_ECG
-            
             batch_generate_ECG(
                 settings=self.settings,
                 unet=self.unet,
@@ -116,8 +118,6 @@ class DiffusionInference:
             )
         else:
             # Run inference without VAE encoding
-            from utils.inference_novae import batch_generate_ECG_novae
-            
             batch_generate_ECG_novae(
                 settings=self.settings,
                 unet=self.unet,

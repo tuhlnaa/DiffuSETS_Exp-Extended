@@ -8,6 +8,7 @@ from tqdm import tqdm
 from openai import OpenAI
 from matplotlib import pyplot as plt
 
+# Import custom modules
 from utils.text_to_emb import prompt_propcess
 
 
@@ -79,21 +80,32 @@ def generation_from_net(diffused_model, net, batch_size: int, device: torch.devi
     return xi 
 
 
-def save_ecg_images(gen_ecg: torch.Tensor, save_path: Path, sample_rate: float = 102.4) -> None:
-    """Save generated ECG images to disk."""
+def save_ecg_images(gen_ecg: torch.Tensor, save_path: Path, sample_rate: float = 102.4, 
+                    save_signal: bool = True, save_image: bool = True) -> None:
+    """
+    Save generated ECG as raw signals and/or images to disk.
+    
+    Args:
+        gen_ecg: Generated ECG tensor of shape (batch_size, seq_len, num_leads)
+        save_path: Directory path to save outputs
+        sample_rate: Sampling rate in Hz (default: 102.4)
+        save_signal: Whether to save raw signal as .npy file
+        save_image: Whether to save ECG plot as .png image
+    """
     for j in range(len(gen_ecg)):
         output = gen_ecg[j].squeeze(0).detach().cpu().numpy()
-        ecg_plot.plot(output.T, sample_rate)            
-        plt.savefig(save_path / f'{j} Generated ECG.png')
-        plt.close()
+        output = output.T
 
-
-def save_metadata(save_path: Path, metadata: dict) -> None:
-    """Save generation metadata to JSON file."""
-    filepath = save_path / 'features.json'
-    with open(filepath, 'w') as json_file:
-        json.dump(metadata, json_file, indent=4)
-    print(f"Features successfully written to {filepath}")
+        # Save raw signal as numpy array
+        if save_signal:
+            signal_path = save_path / f'{j}_ecg_signal.npy'
+            np.save(signal_path, output)
+        
+        # Save ECG plot as image
+        if save_image:
+            ecg_plot.plot(output, sample_rate)
+            plt.savefig(save_path / f'{j}_ecg_image.png', dpi=200)
+            plt.close()
 
 
 def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition: bool) -> None:
@@ -113,9 +125,9 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
     
     save_img = settings['save_img']
     save_signal = settings['save_signal']
-    if not save_img or not save_signal:
-        print("Skipping save operation...")
-
+    
+    if not save_img and not save_signal:
+        print("Warning: Both save_img and save_signal are False. No output will be saved.")
 
     batch_size = settings['gen_batch']
     device = torch.device(settings['device'] if torch.cuda.is_available() else "cpu")
@@ -170,13 +182,19 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
         condition=condition_dict
     )
 
-    # Generate and save images if requested
-    if save_img:
+    # Generate and save ECG outputs if requested
+    if save_img or save_signal:
         with torch.no_grad():
             gen_ecg = decoder(latent)
-        # torch.Size([4, 1024, 12]) torch.float32
-        print(gen_ecg.shape, gen_ecg.dtype, gen_ecg.max(), gen_ecg.min())
-        save_ecg_images(gen_ecg, save_path)
+        
+        save_ecg_images(gen_ecg, save_path, sample_rate=102.4, 
+                       save_signal=save_signal, save_image=save_img)
+        if verbose:
+            print(f"Generated ECG shape: {gen_ecg.shape}, dtype: {gen_ecg.dtype}")
 
-    # Save metadata
-    save_metadata(save_path, metadata)
+        print(f"Saved {batch_size} ECG samples to {save_path}")
+
+    # Save generation metadata to JSON file
+    filepath = save_path / 'features.json'
+    with open(filepath, 'w') as json_file:
+        json.dump(metadata, json_file, indent=4)
