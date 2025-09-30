@@ -1,9 +1,9 @@
-import os
 import json
 import ecg_plot
 import torch
 import numpy as np
 
+from pathlib import Path
 from tqdm import tqdm
 from openai import OpenAI
 from matplotlib import pyplot as plt
@@ -11,7 +11,7 @@ from matplotlib import pyplot as plt
 from utils.text_to_emb import prompt_propcess
 
 
-def get_embedding_from_api(text: str, openai_key: str): 
+def get_embedding_from_api(text: str, openai_key: str) -> np.ndarray: 
     """Get text embedding from OpenAI API."""
     text = prompt_propcess(text) 
 
@@ -38,7 +38,7 @@ def prepare_text_embedding(text: str, openai_key: str, batch_size: int, device: 
 
 
 def prepare_condition_dict(gender: str, age: float, hr: float, batch_size: int, 
-                           device: torch.device):
+                           device: torch.device) -> dict[str, torch.Tensor]:
     """Prepare condition dictionary for conditional generation."""
     condition_dict = {
         'gender': 1 if gender == 'M' else 0,
@@ -54,10 +54,9 @@ def prepare_condition_dict(gender: str, age: float, hr: float, batch_size: int,
     return condition_dict
 
 
-def generation_from_net(diffused_model, net, batch_size, device, text_embed, 
-                        condition=None, num_channels=4, dim=128):
+def generation_from_net(diffused_model, net, batch_size: int, device: torch.device, text_embed: torch.Tensor, 
+                        condition: dict[str, torch.Tensor] | None = None, num_channels: int = 4, dim: int = 128) -> torch.Tensor:
     """Generate samples using diffusion model."""
-    net.eval()
     xi = torch.randn(batch_size, num_channels, dim).to(device)
     
     timesteps = tqdm(diffused_model.timesteps)
@@ -80,24 +79,24 @@ def generation_from_net(diffused_model, net, batch_size, device, text_embed,
     return xi 
 
 
-def save_ecg_images(gen_ecg: torch.Tensor, save_path: str, sample_rate: float = 102.4):
+def save_ecg_images(gen_ecg: torch.Tensor, save_path: Path, sample_rate: float = 102.4) -> None:
     """Save generated ECG images to disk."""
     for j in range(len(gen_ecg)):
         output = gen_ecg[j].squeeze(0).detach().cpu().numpy()
         ecg_plot.plot(output.T, sample_rate)            
-        plt.savefig(os.path.join(save_path, f'{j} Generated ECG.png'))
+        plt.savefig(save_path / f'{j} Generated ECG.png')
         plt.close()
 
 
-def save_metadata(save_path: str, metadata: dict):
+def save_metadata(save_path: Path, metadata: dict) -> None:
     """Save generation metadata to JSON file."""
-    filepath = os.path.join(save_path, 'features.json')
+    filepath = save_path / 'features.json'
     with open(filepath, 'w') as json_file:
         json.dump(metadata, json_file, indent=4)
     print(f"Features successfully written to {filepath}")
 
 
-def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition: bool):
+def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition: bool) -> None:
     """
     Generate batch of ECG signals using diffusion model.
     
@@ -109,12 +108,13 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
         condition: Whether to use conditional generation
     """
     # Extract settings
-    save_path = settings['save_path']
-    os.makedirs(save_path, exist_ok=True)
+    save_path = Path(settings['save_path'])
+    save_path.mkdir(parents=True, exist_ok=True)
     
     save_img = settings['save_img']
-    if not save_img:
-        print("Skipping image generation...")
+    save_signal = settings['save_signal']
+    if not save_img or not save_signal:
+        print("Skipping save operation...")
 
 
     batch_size = settings['gen_batch']
@@ -157,6 +157,8 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
     # Move models to device
     unet.to(device)
     decoder.to(device)
+    unet.eval()
+    decoder.eval()
 
     # Generate latent representations
     latent = generation_from_net(
@@ -170,9 +172,11 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
 
     # Generate and save images if requested
     if save_img:
-        gen_ecg = decoder(latent)
+        with torch.no_grad():
+            gen_ecg = decoder(latent)
+        # torch.Size([4, 1024, 12]) torch.float32
+        print(gen_ecg.shape, gen_ecg.dtype, gen_ecg.max(), gen_ecg.min())
         save_ecg_images(gen_ecg, save_path)
 
     # Save metadata
-    save_metadata(save_path, metadata)    
-
+    save_metadata(save_path, metadata)
