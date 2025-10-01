@@ -14,7 +14,7 @@ from diffusers import DDPMScheduler
 import os
 import ecg_plot 
 
-from utils.text_to_emb import prompt_propcess 
+from utils.text_to_emb import process_prompt
 
 def find_power_of_ten(number):
     if number > 0:
@@ -86,7 +86,7 @@ def batch_generate_ECG(nums,
         text_visited.append(text)
         index += 1
 
-        prompt = prompt_propcess(text)
+        prompt = process_prompt(text)
         print(prompt)
 
         # try:

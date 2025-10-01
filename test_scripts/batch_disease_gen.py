@@ -14,7 +14,6 @@ from torch.utils.data import DataLoader
 from diffusers import DDPMScheduler
 import os
 import argparse
-from utils.text_to_emb import prompt_propcess  
 
 
 def find_power_of_ten(number):

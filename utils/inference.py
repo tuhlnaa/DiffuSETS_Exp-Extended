@@ -9,12 +9,12 @@ from openai import OpenAI
 from matplotlib import pyplot as plt
 
 # Import custom modules
-from utils.text_to_emb import prompt_propcess
+from utils.text_to_emb import process_prompt
 
 
 def get_embedding_from_api(text: str, openai_key: str) -> np.ndarray: 
     """Get text embedding from OpenAI API."""
-    text = prompt_propcess(text) 
+    text = process_prompt(text) 
 
     client = OpenAI(api_key=openai_key)
 

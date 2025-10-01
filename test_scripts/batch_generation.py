@@ -15,7 +15,7 @@ from diffusers import DDPMScheduler
 import os
 import argparse
 
-from utils.text_to_emb import prompt_propcess  
+from utils.text_to_emb import process_prompt
 
 
 def find_power_of_ten(number):
@@ -87,7 +87,7 @@ def batch_generate_ECG(nums,
         features_file_content = {}
 
 
-        text = prompt_propcess(text)
+        text = process_prompt(text)
 
         text_embed = y['text_embed']
 

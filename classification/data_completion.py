@@ -14,8 +14,6 @@ from torch.utils.data import DataLoader
 from diffusers import DDPMScheduler
 import os
 
-from utils.text_to_emb import prompt_propcess  
-
     
 def generation_from_net(diffused_model: DDPMScheduler, net: ECGconditional, batch_size, device, text_embed, condition, use_vae_latent):
     net.eval()
