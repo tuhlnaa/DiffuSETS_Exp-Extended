@@ -31,7 +31,7 @@ def prepare_text_embedding(text: str, openai_key: str, batch_size: int, device: 
     embedding = get_embedding_from_api(text, openai_key)
     embedding = embedding.astype(np.float32)
 
-    # Directly create batched tensor: (embedding_dim, ) ->(batch_size, 1, embedding_dim)
+    # Directly create batched tensor: (embedding_dim, ) -> (batch_size, 1, embedding_dim)
     embedding_tensor = torch.from_numpy(embedding).unsqueeze(0).unsqueeze(0)
     embedding_tensor = embedding_tensor.expand(batch_size, 1, -1).to(device)
 
@@ -158,7 +158,7 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
             settings['age'], 
             settings['hr'], 
             batch_size, 
-            device, 
+            device
         )
         metadata.update({
             "gender": settings['gender'],
@@ -179,7 +179,9 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
         batch_size, 
         device, 
         text_embed=text_embed, 
-        condition=condition_dict
+        condition=condition_dict,
+        num_channels=4,
+        dim=128
     )
 
     # Generate and save ECG outputs if requested
@@ -188,7 +190,7 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
             gen_ecg = decoder(latent)
         
         save_ecg_images(gen_ecg, save_path, sample_rate=102.4, 
-                       save_signal=save_signal, save_image=save_img)
+                        save_signal=save_signal, save_image=save_img)
         if verbose:
             print(f"Generated ECG shape: {gen_ecg.shape}, dtype: {gen_ecg.dtype}")
 

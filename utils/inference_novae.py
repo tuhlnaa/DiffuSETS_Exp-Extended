@@ -1,38 +1,21 @@
-import torch 
-import os 
-from matplotlib import pyplot as plt
-import numpy as np 
-from tqdm import tqdm
 import json
-import ecg_plot 
+import ecg_plot
+import torch
+import numpy as np
 
-from utils.text_to_emb import prompt_propcess 
+from pathlib import Path
+from tqdm import tqdm
+from openai import OpenAI
+from matplotlib import pyplot as plt
 
-def generation_from_net(diffused_model, unet, batch_size, device, text_embed, condition, num_channels, dim):
-    unet.eval()
-    xi = torch.randn(batch_size, num_channels, dim)
-    xi = xi.to(device)
-    timesteps = tqdm(diffused_model.timesteps)
-    for _, i in enumerate(timesteps):
-        t = i*torch.ones(batch_size, dtype=torch.long)
-        with torch.no_grad():
+# Import custom modules
+from utils.text_to_emb import prompt_propcess
 
-            # change this line to fit your unet 
-            if condition:
-                noise_predict = unet(xi, t, text_embed, condition)
-            else:
-                noise_predict = unet(xi, t, text_embed)
 
-            xi = diffused_model.step(model_output=noise_predict, 
-                                     timestep=i, 
-                                     sample=xi)['prev_sample']
-    return xi 
-
-def get_embedding_from_api(text: str, openai_key: str): 
+def get_embedding_from_api(text: str, openai_key: str) -> np.ndarray: 
+    """Get text embedding from OpenAI API."""
     text = prompt_propcess(text) 
-    print(text)
 
-    from openai import OpenAI
     client = OpenAI(api_key=openai_key)
 
     response = client.embeddings.create(
@@ -40,85 +23,177 @@ def get_embedding_from_api(text: str, openai_key: str):
         model="text-embedding-ada-002"
     )
 
-    embedding = np.array(response.data[0].embedding)
-    return embedding
+    return np.array(response.data[0].embedding)
 
-def batch_generate_ECG_novae(settings, 
-                             unet, 
-                             diffused_model, 
-                             condition):
 
-    save_path = settings['save_path']
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
+def prepare_text_embedding(text: str, openai_key: str, batch_size: int, device: torch.device) -> torch.Tensor:
+    """Prepare text embedding tensor for batch processing."""
+    embedding = get_embedding_from_api(text, openai_key)
+    embedding = embedding.astype(np.float32)
 
-    save_img = settings['save_img']
-    if not save_img:
-        print("Ignore image drawing and saving...")
+    # Directly create batched tensor: (embedding_dim, ) -> (batch_size, 1, embedding_dim)
+    embedding_tensor = torch.from_numpy(embedding).unsqueeze(0).unsqueeze(0)
+    embedding_tensor = embedding_tensor.expand(batch_size, 1, -1).to(device)
 
-    text = settings['text']
-    gender = settings['gender']
-    age = settings['age']
-    hr = settings['hr']
-    batch = settings['gen_batch']
+    return embedding_tensor
 
-    features_file_content = {}
 
-    text_embed = get_embedding_from_api(text, settings['OPENAI_API_KEY'])
-
-    text_embed = np.array(text_embed)
-    text_embed = np.repeat(text_embed[np.newaxis, :], 1, axis=0)
-    text_embed = np.repeat(text_embed[np.newaxis, :, :], batch, axis=0)
-
-    text_embed = torch.Tensor(text_embed)
-    device = torch.device(settings['device'] if torch.cuda.is_available() else "cpu")
-    text_embed = text_embed.to(device)
+def prepare_condition_dict(gender: str, age: float, hr: float, batch_size: int, 
+                           device: torch.device) -> dict[str, torch.Tensor]:
+    """Prepare condition dictionary for conditional generation."""
+    condition_dict = {
+        'gender': 1 if gender == 'M' else 0,
+        'age': age,
+        'heart rate': hr
+    }
     
-    verbose = settings['verbose']
-    if verbose:
-        print(text_embed.shape)
+    # Convert to batched tensors: (batch_size, 1, 1)
+    for key, value in condition_dict.items():
+        tensor = torch.full((batch_size, 1, 1), value, dtype=torch.float32).to(device)
+        condition_dict[key] = tensor
 
-    features_file_content.update({"batch": batch}) 
-    features_file_content.update({"Diagnosis": text}) 
+    return condition_dict
 
-    condition_dict = None
-    if condition:
-        condition_dict = {'gender': gender, 'age': age, 'heart rate': hr}
-        for key in condition_dict:
-            features_file_content.update({key: condition_dict[key]}) 
-        condition_dict['gender'] = 1 if gender == 'M' else 0
 
-        for key in condition_dict:
-            condition_dict[key] = np.array([condition_dict[key]])
-            condition_dict[key] = np.repeat(condition_dict[key][np.newaxis, :], 1, axis=0)
-            condition_dict[key] = np.repeat(condition_dict[key][np.newaxis, :], batch, axis=0)
-            if verbose:
-                print(condition_dict[key].shape)
-            condition_dict[key] = torch.Tensor(condition_dict[key])
-            condition_dict[key] = condition_dict[key].to(device)
-        if verbose:
-            print(condition_dict)
+def generation_from_net(diffused_model, net, batch_size: int, device: torch.device, text_embed: torch.Tensor, 
+                        condition: dict[str, torch.Tensor] | None = None, num_channels: int = 12, dim: int = 1024) -> torch.Tensor:
+    """Generate samples using diffusion model."""
+    xi = torch.randn(batch_size, num_channels, dim).to(device)
+    
+    timesteps = tqdm(diffused_model.timesteps)
+    for i in timesteps:
+        t = torch.full((batch_size,), i, dtype=torch.long).to(device)
+        
+        with torch.no_grad():
+            # change this line to fit your unet 
+            if condition:
+                noise_predict = net(xi, t, text_embed, condition)
+            else:
+                noise_predict = net(xi, t, text_embed)
 
-    unet.to(device) 
-    gen_ecg = generation_from_net(diffused_model=diffused_model, 
-                                  unet=unet, 
-                                  batch_size=batch, 
-                                  device=device, 
-                                  text_embed=text_embed, 
-                                  condition=condition_dict, 
-                                  num_channels=12, 
-                                  dim=1024) 
-    # (B, C, L) -> (B, L, C)
-    gen_ecg = gen_ecg.transpose(-1, -2)
+            xi = diffused_model.step(
+                model_output=noise_predict, 
+                timestep=i, 
+                sample=xi
+            )['prev_sample']
+    
+    return xi 
 
-    if save_img:
-        for j in range(batch):
-            output = gen_ecg[j]
-            output_ = output.squeeze(0).detach().cpu().numpy()
-            ecg_plot.plot(output_.transpose(1, 0), 102.4)            
-            plt.savefig(os.path.join(save_path , f'{j} Generated ECG.png'))
+
+def save_ecg_images(gen_ecg: torch.Tensor, save_path: Path, sample_rate: float = 102.4, 
+                    save_signal: bool = True, save_image: bool = True) -> None:
+    """
+    Save generated ECG as raw signals and/or images to disk.
+    
+    Args:
+        gen_ecg: Generated ECG tensor of shape (batch_size, seq_len, num_leads)
+        save_path: Directory path to save outputs
+        sample_rate: Sampling rate in Hz (default: 102.4)
+        save_signal: Whether to save raw signal as .npy file
+        save_image: Whether to save ECG plot as .png image
+    """
+    for j in range(len(gen_ecg)):
+        output = gen_ecg[j].squeeze(0).detach().cpu().numpy()
+        output = output.T
+
+        # Save raw signal as numpy array
+        if save_signal:
+            signal_path = save_path / f'{j}_ecg_signal.npy'
+            np.save(signal_path, output)
+        
+        # Save ECG plot as image
+        if save_image:
+            ecg_plot.plot(output, sample_rate)
+            plt.savefig(save_path / f'{j}_ecg_image.png', dpi=200)
             plt.close()
 
-    with open(os.path.join(save_path , 'features.json'), 'w') as json_file:
-        json.dump(features_file_content, json_file, indent=4)
-        print(f"Features has been successfully written to {save_path}/features.json")
+
+def batch_generate_ECG_novae(settings: dict, unet, diffused_model, condition: bool) -> None:
+    """
+    Generate batch of ECG signals using diffusion model (NoVAE version).
+    
+    Args:
+        settings: Dictionary containing generation parameters
+        unet: U-Net model for noise prediction
+        diffused_model: Diffusion model for sampling
+        condition: Whether to use conditional generation
+    """
+    # Extract settings
+    save_path = Path(settings['save_path'])
+    save_path.mkdir(parents=True, exist_ok=True)
+    
+    save_img = settings['save_img']
+    save_signal = settings['save_signal']
+    
+    if not save_img and not save_signal:
+        print("Warning: Both save_img and save_signal are False. No output will be saved.")
+
+    batch_size = settings['gen_batch']
+    device = torch.device(settings['device'] if torch.cuda.is_available() else "cpu")
+    verbose = settings['verbose']
+    
+    # Prepare text embedding
+    text_embed = prepare_text_embedding(
+        settings['text'], 
+        settings['OPENAI_API_KEY'], 
+        batch_size, 
+        device
+    )
+
+    if verbose:
+        print(f"Text embedding shape: {text_embed.shape}")
+    
+    # Prepare metadata
+    metadata = {
+        "batch": batch_size,
+        "Diagnosis": settings['text']
+    }
+
+    # Prepare conditional inputs if needed
+    condition_dict = None
+    if condition:
+        condition_dict = prepare_condition_dict(
+            settings['gender'], 
+            settings['age'], 
+            settings['hr'], 
+            batch_size, 
+            device
+        )
+        metadata.update({
+            "gender": settings['gender'],
+            "age": settings['age'],
+            "heart rate": settings['hr']
+        })
+
+    # Move model to device
+    unet.to(device)
+    unet.eval()
+
+    # Generate ECG in latent space: (B, C, L)
+    gen_ecg = generation_from_net(
+        diffused_model, 
+        unet, 
+        batch_size, 
+        device, 
+        text_embed=text_embed, 
+        condition=condition_dict,
+        num_channels=12,
+        dim=1024
+    )
+
+    # (batch_size, num_leads, seq_len) -> (batch_size, seq_len, num_leads)
+    gen_ecg = gen_ecg.transpose(-1, -2)
+
+    # Save ECG images if requested
+    if save_img or save_signal:
+        save_ecg_images(gen_ecg, save_path, sample_rate=102.4, 
+                        save_signal=save_signal, save_image=save_img)
+        if verbose:
+            print(f"Generated ECG shape: {gen_ecg.shape}, dtype: {gen_ecg.dtype}")
+
+        print(f"Saved {batch_size} ECG samples to {save_path}")
+
+    # Save generation metadata to JSON file
+    filepath = save_path / 'features.json'
+    with open(filepath, 'w') as json_file:
+        json.dump(metadata, json_file, indent=4)
