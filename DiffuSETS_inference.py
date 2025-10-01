@@ -15,8 +15,7 @@ from dotenv import load_dotenv
 
 # Import custom modules
 from utils.config import ConfigurationManager, RichDictPrinter, init_seeds
-from utils.inference_novae import batch_generate_ECG_novae
-from utils.inference import batch_generate_ECG
+from utils.inference import batch_generate_ECG, batch_generate_ECG_novae
 
 
 class ModelLoader:
@@ -55,6 +54,7 @@ class ModelLoader:
             raise FileNotFoundError(f"UNet model file not found: {unet_path}")
         
         unet.load_state_dict(torch.load(unet_path, map_location='cpu'))
+        
         return unet
     
 

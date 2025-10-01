@@ -200,3 +200,94 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
     filepath = save_path / 'features.json'
     with open(filepath, 'w') as json_file:
         json.dump(metadata, json_file, indent=4)
+
+
+def batch_generate_ECG_novae(settings: dict, unet, diffused_model, condition: bool) -> None:
+    """
+    Generate batch of ECG signals using diffusion model (NoVAE version).
+    
+    Args:
+        settings: Dictionary containing generation parameters
+        unet: U-Net model for noise prediction
+        diffused_model: Diffusion model for sampling
+        condition: Whether to use conditional generation
+    """
+    # Extract settings
+    save_path = Path(settings['save_path'])
+    save_path.mkdir(parents=True, exist_ok=True)
+    
+    save_img = settings['save_img']
+    save_signal = settings['save_signal']
+    
+    if not save_img and not save_signal:
+        print("Warning: Both save_img and save_signal are False. No output will be saved.")
+
+    batch_size = settings['gen_batch']
+    device = torch.device(settings['device'] if torch.cuda.is_available() else "cpu")
+    verbose = settings['verbose']
+    
+    # Prepare text embedding
+    text_embed = prepare_text_embedding(
+        settings['text'], 
+        settings['OPENAI_API_KEY'], 
+        batch_size, 
+        device
+    )
+
+    if verbose:
+        print(f"Text embedding shape: {text_embed.shape}")
+    
+    # Prepare metadata
+    metadata = {
+        "batch": batch_size,
+        "Diagnosis": settings['text']
+    }
+
+    # Prepare conditional inputs if needed
+    condition_dict = None
+    if condition:
+        condition_dict = prepare_condition_dict(
+            settings['gender'], 
+            settings['age'], 
+            settings['hr'], 
+            batch_size, 
+            device
+        )
+        metadata.update({
+            "gender": settings['gender'],
+            "age": settings['age'],
+            "heart rate": settings['hr']
+        })
+
+    # Move model to device
+    unet.to(device)
+    unet.eval()
+
+    # Generate ECG in latent space: (B, C, L)
+    gen_ecg = generation_from_net(
+        diffused_model, 
+        unet, 
+        batch_size, 
+        device, 
+        text_embed=text_embed, 
+        condition=condition_dict,
+        num_channels=12,
+        dim=1024
+    )
+
+    # (batch_size, num_leads, seq_len) -> (batch_size, seq_len, num_leads)
+    gen_ecg = gen_ecg.transpose(-1, -2)
+
+    # Save ECG images if requested
+    if save_img or save_signal:
+        save_ecg_images(gen_ecg, save_path, sample_rate=102.4, 
+                        save_signal=save_signal, save_image=save_img)
+        if verbose:
+            print(f"Generated ECG shape: {gen_ecg.shape}, dtype: {gen_ecg.dtype}")
+
+        print(f"Saved {batch_size} ECG samples to {save_path}")
+
+    # Save generation metadata to JSON file
+    filepath = save_path / 'features.json'
+    with open(filepath, 'w') as json_file:
+        json.dump(metadata, json_file, indent=4)
