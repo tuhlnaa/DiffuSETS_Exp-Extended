@@ -1,6 +1,7 @@
 import json
 import ecg_plot
 import torch
+import torch.nn as nn
 import numpy as np
 
 from pathlib import Path
@@ -55,7 +56,7 @@ def prepare_condition_dict(gender: str, age: float, hr: float, batch_size: int,
     return condition_dict
 
 
-def generation_from_net(diffused_model, net, batch_size: int, device: torch.device, text_embed: torch.Tensor, 
+def generation_from_net(diffused_model, unet: nn.Module, batch_size: int, device: torch.device, text_embed: torch.Tensor, 
                         condition: dict[str, torch.Tensor] | None = None, num_channels: int = 4, dim: int = 128) -> torch.Tensor:
     """Generate samples using diffusion model."""
     xi = torch.randn(batch_size, num_channels, dim).to(device)
@@ -67,9 +68,9 @@ def generation_from_net(diffused_model, net, batch_size: int, device: torch.devi
         with torch.no_grad():
             # change this line to fit your unet 
             if condition:
-                noise_predict = net(xi, t, text_embed, condition)
+                noise_predict = unet(xi, t, text_embed, condition)
             else:
-                noise_predict = net(xi, t, text_embed)
+                noise_predict = unet(xi, t, text_embed)
 
             xi = diffused_model.step(
                 model_output=noise_predict, 
@@ -104,11 +105,13 @@ def save_ecg_images(gen_ecg: torch.Tensor, save_path: Path, sample_rate: float =
         # Save ECG plot as image
         if save_image:
             ecg_plot.plot(output, sample_rate)
+            # wfdb.plot_items(output.T, figsize=(10, 10), title="Generated ECG.png")
+            # ecg_plot.plot(output, sample_rate, title=None, columns=1, row_height=4)   
             plt.savefig(save_path / f'{j}_ecg_image.png', dpi=200)
             plt.close()
 
 
-def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition: bool) -> None:
+def batch_generate_ECG(settings: dict, unet: nn.Module, diffused_model, decoder: nn.Module, condition: bool) -> None:
     """
     Generate batch of ECG signals using diffusion model.
     
@@ -134,7 +137,7 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
     verbose = settings['verbose']
     
     # Prepare text embedding
-    text_embed = prepare_text_embedding(
+    text_embedding = prepare_text_embedding(
         settings['text'], 
         settings['OPENAI_API_KEY'], 
         batch_size, 
@@ -142,7 +145,7 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
     )
 
     if verbose:
-        print(f"Text embedding shape: {text_embed.shape}")
+        print(f"Text embedding shape: {text_embedding.shape}")
     
     # Prepare metadata
     metadata = {
@@ -178,7 +181,7 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
         unet, 
         batch_size, 
         device, 
-        text_embed=text_embed, 
+        text_embed=text_embedding, 
         condition=condition_dict,
         num_channels=4,
         dim=128
@@ -202,7 +205,7 @@ def batch_generate_ECG(settings: dict, unet, diffused_model, decoder, condition:
         json.dump(metadata, json_file, indent=4)
 
 
-def batch_generate_ECG_novae(settings: dict, unet, diffused_model, condition: bool) -> None:
+def batch_generate_ECG_novae(settings: dict, unet: nn.Module, diffused_model, condition: bool) -> None:
     """
     Generate batch of ECG signals using diffusion model (NoVAE version).
     
@@ -227,7 +230,7 @@ def batch_generate_ECG_novae(settings: dict, unet, diffused_model, condition: bo
     verbose = settings['verbose']
     
     # Prepare text embedding
-    text_embed = prepare_text_embedding(
+    text_embedding = prepare_text_embedding(
         settings['text'], 
         settings['OPENAI_API_KEY'], 
         batch_size, 
@@ -235,7 +238,7 @@ def batch_generate_ECG_novae(settings: dict, unet, diffused_model, condition: bo
     )
 
     if verbose:
-        print(f"Text embedding shape: {text_embed.shape}")
+        print(f"Text embedding shape: {text_embedding.shape}")
     
     # Prepare metadata
     metadata = {
@@ -269,7 +272,7 @@ def batch_generate_ECG_novae(settings: dict, unet, diffused_model, condition: bo
         unet, 
         batch_size, 
         device, 
-        text_embed=text_embed, 
+        text_embed=text_embedding, 
         condition=condition_dict,
         num_channels=12,
         dim=1024

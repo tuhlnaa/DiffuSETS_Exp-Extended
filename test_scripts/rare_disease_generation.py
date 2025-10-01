@@ -1,61 +1,53 @@
-import torch 
-import numpy as np 
-import pandas as pd
-import wfdb 
 import os 
+import sys
+import torch 
+import ecg_plot
+import numpy as np 
 import matplotlib.pyplot as plt
+
 from diffusers import DDPMScheduler 
+from pathlib import Path
+
+# Import custom modules
+PROJECT_ROOT = Path(__file__).parents[1]
+sys.path.append(str(PROJECT_ROOT))
+
 from unet.unet_conditional import ECGconditional
 from vae.vae_model import VAE_Decoder
-from tqdm import tqdm 
-import ecg_plot
+from utils.inference import generation_from_net
+from utils.config import init_seeds
 
-
-def generation_from_net(diffused_model: DDPMScheduler, net: ECGconditional, batch_size, device, text_embed, condition, dim=128):
-    net.eval()
-    xi = torch.randn(batch_size, 4, dim)
-    xi = xi.to(device)
-    timesteps = tqdm(diffused_model.timesteps)
-    for _, i in enumerate(timesteps):
-        t = i*torch.ones(batch_size, dtype=torch.long)
-        with torch.no_grad():
-            if condition:
-                noise_predict = net(xi, t, text_embed, condition)
-            else:
-                noise_predict = net(xi, t, text_embed)
-
-            xi = diffused_model.step(model_output=noise_predict, 
-                                     timestep=i, 
-                                     sample=xi)['prev_sample']
-    return xi
 
 if __name__ == '__main__': 
-    gen_batch = 100
+    batch_size = 100
     gender = 'M'
     age = 24
     hr = 90
     disease = 'brugada'
     save_path = f'./exp/{disease}/'
     device_str = "cuda:0"
+    unet_path = './checkpoints/unet_all.pth'
+    vae_path = './checkpoints/vae_model.pth'
+    init_seeds()
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
 
     n_channels = 4
     num_train_steps = 1000
-    net = ECGconditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
-    unet_path = './prerequisites/unet_all.pth'
-    net.load_state_dict(torch.load(unet_path, map_location=device))
-    net = net.to(device)
+    unet = ECGconditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
+    
+    unet.load_state_dict(torch.load(unet_path, map_location=device))
+    unet = unet.to(device)
 
     diffused_model = DDPMScheduler(num_train_timesteps=num_train_steps, beta_start=0.00085, beta_end=0.0120)
     diffused_model.set_timesteps(1000)
 
     decoder = VAE_Decoder()
-    vae_path = './prerequisites/vae_model.pth'
+    
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])
     decoder = decoder.to(device)
 
-    net.eval()
+    unet.eval()
     decoder.eval()
 
     try:
@@ -63,38 +55,46 @@ if __name__ == '__main__':
     except:
         pass 
 
-    with open(f'./non_mimic_embeddings/embedding_{disease}.txt') as f:
-        text_embedding = eval(f.readline())
+    text_embedding = np.load(f'./non_mimic_embeddings/embedding_{disease}.npy')
     text_embedding = torch.tensor(text_embedding)
-    text_embedding = text_embedding.repeat(gen_batch, 1, 1).to(device)
+
+    text_embedding = text_embedding.repeat(batch_size, 1, 1).to(device)
     gender_vec = 0 if gender == 'F' else 1
 
-    condition = {'gender': [gender_vec] * gen_batch, 
-                'age': [age] * gen_batch,
-                'hr': [hr] * gen_batch}
+    condition_dict = {'gender': [gender_vec] * batch_size, 
+                'age': [age] * batch_size,
+                'hr': [hr] * batch_size}
 
-    for key in condition:
-        condition[key] = torch.tensor(condition[key]).reshape(gen_batch, 1, 1)
-        condition[key] = condition[key].to(device)
+    for key in condition_dict:
+        condition_dict[key] = torch.tensor(condition_dict[key]).reshape(batch_size, 1, 1)
+        condition_dict[key] = condition_dict[key].to(device)
 
-    latents = generation_from_net(diffused_model=diffused_model, 
-                                net=net, 
-                                text_embed=text_embedding, 
-                                condition=condition, 
-                                batch_size=gen_batch, 
-                                device=device) 
-    
-    torch.save(latents.cpu(), os.path.join(save_path, 'latent.pt')) 
+    # Generate latent representations
+    latent = generation_from_net(
+        diffused_model, 
+        unet, 
+        batch_size, 
+        device, 
+        text_embed=text_embedding, 
+        condition=condition_dict,
+        num_channels=4,
+        dim=128
+    )
 
-    if latents.shape[0] <= 20:
-        ecgs = decoder(latents)
+    torch.save(latent.cpu(), os.path.join(save_path, 'latent.pt')) 
+
+    if latent.shape[0] <= 20:
+        ecgs = decoder(latent)
     else:
-        ecgs = [decoder(minibatch_latent) for minibatch_latent in torch.split(latents, 20)]
+        ecgs = [decoder(minibatch_latent) for minibatch_latent in torch.split(latent, 20)]
         ecgs = torch.concat(ecgs, dim=0)
+
+    print(ecgs.shape) # [100, 1024, 12]
 
     for idx, ecg in enumerate(ecgs):
         output_ = ecg.detach().cpu().numpy()
         # wfdb.plot_items(output_, figsize=(10, 10), title="Generated ECG.png")
         ecg_plot.plot(output_.transpose(1, 0), 102.4, title=None, columns=1, row_height=4)            
-        plt.savefig(os.path.join(save_path, f'{idx} Generated ECG.png'))
+        plt.savefig(os.path.join(save_path, f'{idx} Generated ECG.png'), dpi=200)
         plt.close()
+        break
