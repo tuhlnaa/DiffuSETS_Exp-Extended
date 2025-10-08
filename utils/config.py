@@ -4,6 +4,7 @@ Based on: https://github.com/huggingface/pytorch-image-models/blob/main/train.py
 """
 import json
 import os
+from omegaconf import OmegaConf
 import torch
 import random
 import numpy as np
@@ -12,7 +13,7 @@ from torch.backends import cudnn
 from typing import Any, Dict, Union
 from pathlib import Path
 from rich.table import Table
-from rich import box
+from rich import box, print
 from rich.pretty import Pretty
 from rich.console import Console
 
@@ -76,7 +77,7 @@ class ConfigurationManager:
         config['inference_setting']['device'] = config['meta']['device']
         
          
-class RichDictPrinter:
+class RichPrinter:
     @staticmethod
     def print_dict(data: Union[Dict, str], title: str = "Dictionary") -> None:
         """Print dictionary details in a structured table.
@@ -85,9 +86,8 @@ class RichDictPrinter:
             data: Dictionary object or JSON string to display
             title: Title for the table display
         """
-        console = Console()
         table = Table(title=title, box=box.ROUNDED)
-        table.add_column("Parameter", justify="right", style="cyan", no_wrap=True)
+        table.add_column("Parameter", style="cyan", no_wrap=True)
         table.add_column("Value", style="magenta")
         
         # Handle JSON string input
@@ -95,12 +95,12 @@ class RichDictPrinter:
             try:
                 data = json.loads(data)
             except json.JSONDecodeError as e:
-                console.print(f"[red]Error parsing JSON string: {e}[/red]")
+                print(f"[red]Error parsing JSON string: {e}[/red]")
                 return
         
         # Ensure we have a dictionary
         if not isinstance(data, dict):
-            console.print(f"[red]Error: Expected dictionary or JSON string, got {type(data)}[/red]")
+            print(f"[red]Error: Expected dictionary or JSON string, got {type(data)}[/red]")
             return
         
         # Add rows recursively for nested dictionaries
@@ -114,5 +114,38 @@ class RichDictPrinter:
                     table.add_row(param_name, pretty_value)
         
         add_dict_to_table(data)
-        console.print(table)
-        console.print()  # Add spacing after table
+        print(table)
+        print()  # Add spacing after table
+
+
+    @staticmethod
+    def print_config(config: Any, title: str = "Configuration") -> None:
+        """Print configuration details in a structured table."""
+        table = Table(title=title, box=box.ROUNDED)
+        table.add_column("Parameter", style="cyan", no_wrap=True)
+        table.add_column("Value", style="magenta")
+        
+        # Check if the config is an OmegaConf object
+        if OmegaConf.is_config(config):
+            # Convert OmegaConf to a dictionary
+            config_dict = OmegaConf.to_container(config, resolve=True)
+            
+            # Add rows recursively for nested config
+            def add_dict_to_table(d, prefix=""):
+                for key, value in d.items():
+                    param_name = f"{prefix}{key}"
+                    if isinstance(value, dict):
+                        add_dict_to_table(value, f"{param_name}.")
+                    else:
+                        pretty_value = Pretty(value, indent_guides=False)
+                        table.add_row(param_name, pretty_value)
+            
+            add_dict_to_table(config_dict)
+        else:
+            # Handle argparse or other config types
+            for key, value in vars(config).items():
+                pretty_value = Pretty(value, indent_guides=False)
+                table.add_row(key, pretty_value)
+        
+        print(table)
+        print()  # Add spacing after table

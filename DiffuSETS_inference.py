@@ -14,7 +14,7 @@ from diffusers import DDPMScheduler
 from dotenv import load_dotenv
 
 # Import custom modules
-from utils.config import ConfigurationManager, RichDictPrinter, init_seeds
+from utils.config import ConfigurationManager, RichPrinter, init_seeds
 from utils.inference import batch_generate_ECG, batch_generate_ECG_novae
 
 
@@ -140,7 +140,7 @@ def create_argument_parser(args=None) -> argparse.ArgumentParser:
     config = ConfigurationManager.load_config(parsed_args.config)
 
     # Print configuration
-    RichDictPrinter.print_dict(config, "Configuration")
+    RichPrinter.print_dict(config, "Configuration")
 
     return config
 
