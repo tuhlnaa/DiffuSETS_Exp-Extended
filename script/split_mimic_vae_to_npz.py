@@ -5,7 +5,7 @@ This script processes the large PyTorch file in a memory-efficient way,
 creating one NPZ file per sample.
 
 Usage:
-    python split_mimic_vae_to_npz.py ./mimic_vae_0_new.pt ./output/mimic_vae_npz
+    python script/split_mimic_vae_to_npz.py ./mimic_vae_0_new.pt ./output/Dataset_Preprocessing/MIMIC-IV-ECG/mimic_vae_npz
 """
 import argparse
 import psutil
@@ -18,20 +18,44 @@ from tqdm import tqdm
 
 
 def convert_to_numpy(obj):
-    """Convert PyTorch tensors and other objects to NumPy arrays."""
+    """Convert PyTorch tensors and other objects to NumPy arrays with optimized dtypes."""
     if isinstance(obj, torch.Tensor):
-        return obj.cpu().numpy()
+        arr = obj.cpu().numpy()
     elif isinstance(obj, np.ndarray):
-        return obj
+        arr = obj
+    elif isinstance(obj, np.generic):
+        # Handle NumPy scalar types (np.int64, np.float64, etc.)
+        arr = np.asarray(obj)
+    elif isinstance(obj, (int, float)):
+        # Handle Python scalar types
+        arr = np.asarray(obj)
     elif isinstance(obj, list):
         # For lists, try to convert to numpy array if possible
         try:
-            return np.array(obj)
+            arr = np.array(obj)
         except:
             # If conversion fails, return as is (will be pickled by npz)
             return obj
     else:
         return obj
+   
+    # Convert float64 to float32
+    if arr.dtype == np.float64:
+        return arr.astype(np.float32)
+   
+    # Convert int64 to int32 (with overflow check)
+    elif arr.dtype == np.int64:
+        # Check if values fit in int32 range
+        if arr.size > 0:
+            min_val, max_val = np.min(arr), np.max(arr)
+            if min_val >= np.iinfo(np.int32).min and max_val <= np.iinfo(np.int32).max:
+                return arr.astype(np.int32)
+            else:
+                print(f"Warning: int64 values outside int32 range (min={min_val}, max={max_val}), keeping int64")
+                return arr
+        return arr.astype(np.int32)
+   
+    return arr
 
 
 def save_sample_to_npz(sample_id, sample_data, output_dir):
@@ -49,7 +73,7 @@ def save_sample_to_npz(sample_id, sample_data, output_dir):
     # Add the main data tensor
     if 'data' in sample_data:
         npz_dict['data'] = convert_to_numpy(sample_data['data'])
-    
+
     # Add label fields
     if 'label' in sample_data:
         label = sample_data['label']
@@ -59,8 +83,8 @@ def save_sample_to_npz(sample_id, sample_data, output_dir):
             npz_dict[npz_key] = convert_to_numpy(value)
     
     # Add sample ID
-    npz_dict['sample_id'] = np.array([sample_id])
-    
+    npz_dict['sample_id'] = convert_to_numpy(np.array([sample_id]))
+
     # Save to NPZ file
     output_path = output_dir / f'sample_{sample_id:08d}.npz'
     np.savez(output_path, **npz_dict)
@@ -73,7 +97,6 @@ def split_pt_to_npz(input_path: str, output_dir: str):
     Args:
         input_path: Path to the input .pt file
         output_dir: Directory to save NPZ files
-        batch_size: Number of samples to process before garbage collection
     """
     input_path = Path(input_path)
     output_dir = Path(output_dir)
@@ -106,9 +129,8 @@ def split_pt_to_npz(input_path: str, output_dir: str):
     
     # Print summary
     sample_files = list(output_dir.glob('sample_*.npz'))
-    total_size_mb = sum(f.stat().st_size for f in sample_files) / (1024 * 1024)
-    print(f"Total output size: {total_size_mb:.2f} MB")
-    print(f"Average file size: {total_size_mb / len(sample_files):.2f} MB")
+    total_size_mb = sum(f.stat().st_size for f in sample_files) / (1024 * 1024 * 1024)
+    print(f"Total output size: {total_size_mb:.2f} GB")
 
 
 def parse_args():

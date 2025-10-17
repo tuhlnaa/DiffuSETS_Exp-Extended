@@ -5,8 +5,8 @@ This script loads the individual NPZ files created by split_mimic_vae_to_npz.py
 and provides utilities for testing the dataset loading.
 
 Usage:
-    python usage_dataset.py ./output/mimic_vae_npz --batch_size 8
-    python usage_dataset.py ./output/mimic_vae_npz --batch_size 8 --num_batches 3
+    python test/usage_dataset.py ./output/mimic_vae_npz
+    python test/usage_dataset.py ./output/mimic_vae_npz --batch_size 8 --num_batches 3
 """
 
 import argparse
@@ -20,63 +20,13 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
+# Import custom modules
+PROJECT_ROOT = Path(__file__).parents[1]
+sys.path.append(str(PROJECT_ROOT))
+
+from dataset.mimic_iv_ecg_datasetV2 import MIMIC_IV_ECG_VAE_Dataset
+
 console = Console()
-
-
-class NPZDataset(Dataset):
-    """Dataset class for loading individual NPZ files."""
-    
-    def __init__(self, npz_dir: str):
-        """
-        Initialize NPZ dataset.
-        
-        Args:
-            npz_dir: Directory containing NPZ files (sample_*.npz)
-        """
-        self.npz_dir = Path(npz_dir)
-        
-        if not self.npz_dir.exists():
-            raise FileNotFoundError(f"Directory not found: {npz_dir}")
-        
-        # Find all NPZ files
-        self.npz_files = sorted(self.npz_dir.glob('sample_*.npz'))
-        
-        if len(self.npz_files) == 0:
-            raise ValueError(f"No NPZ files found in {npz_dir}")
-        
-        console.print(f"[cyan]Loading dataset from:[/cyan] {npz_dir}")
-        console.print(f"[green]✓ Found {len(self.npz_files)} samples[/green]")
-    
-    def __len__(self):
-        return len(self.npz_files)
-    
-    def __getitem__(self, idx):
-        """
-        Load a single sample from NPZ file.
-        
-        Returns:
-            data: The main data tensor
-            label: Dictionary containing all label fields
-        """
-        npz_path = self.npz_files[idx]
-        
-        # Load NPZ file
-        with np.load(npz_path, allow_pickle=True) as npz_data:
-            # Extract main data
-            data = torch.from_numpy(npz_data['data'])
-            
-            # Extract all label fields (those with 'label_' prefix)
-            label = {}
-            for key in npz_data.keys():
-                if key.startswith('label_'):
-                    # Remove 'label_' prefix
-                    label_key = key[6:]  # len('label_') = 6
-                    label[label_key] = torch.from_numpy(npz_data[key])
-            
-            # Optionally extract sample_id if needed
-            # sample_id = npz_data['sample_id'][0]
-        
-        return data, label
 
 
 def create_dataloader(
@@ -99,7 +49,7 @@ def create_dataloader(
     Returns:
         DataLoader instance
     """
-    dataset = NPZDataset(npz_dir)
+    dataset = MIMIC_IV_ECG_VAE_Dataset(npz_dir)
     
     # Custom collate function to handle label dictionaries
     def collate_fn(batch):
