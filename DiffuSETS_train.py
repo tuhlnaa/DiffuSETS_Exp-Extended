@@ -74,7 +74,7 @@ def main():
                     dataloader=train_dataloader, 
                     diffused_model=diffused_model, 
                     unet=unet, 
-                    h_=h_, 
+                    hyperparams=h_, 
                     logger=logger)
     else:
         from vae.vae_model import VAEDecoder 
@@ -90,7 +90,7 @@ def main():
                           diffused_model=diffused_model, 
                           unet=unet, 
                           decoder=decoder, 
-                          h_=h_, 
+                          hyperparams=h_, 
                           logger=logger)
 
 if __name__ == '__main__': 

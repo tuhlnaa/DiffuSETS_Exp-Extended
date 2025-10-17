@@ -98,19 +98,19 @@ def train_model_novae(meta,
                 diffused_model, 
                 unet, 
                 decoder, 
-                h_, 
+                hyperparams, 
                 logger):
     
     device = torch.device(meta['device'] if torch.cuda.is_available() else "cpu")
     decoder = decoder.to(device)
     unet = unet.to(device)
-    optimizer = torch.optim.AdamW(params=unet.parameters(), lr=h_['lr'])
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=h_['epochs']*len(dataloader), eta_min=0.1*h_['lr'])
+    optimizer = torch.optim.AdamW(params=unet.parameters(), lr=hyperparams['lr'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=hyperparams['epochs']*len(dataloader), eta_min=0.1*hyperparams['lr'])
     min_loss = 100
 
     start_time = time.time()
 
-    for i in range(1, h_['epochs'] + 1):
+    for i in range(1, hyperparams['epochs'] + 1):
         s_t = time.time()
         mean_loss = train_epoch_channels(dataloader=dataloader, 
                                          unet=unet, 
