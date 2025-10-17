@@ -5,7 +5,7 @@ This script processes the large PyTorch file in a memory-efficient way,
 creating one NPZ file per sample.
 
 Usage:
-    python split_mimic_vae_to_npz.py ./mimic_vae_0_new.pt ./output/mimic_npz
+    python split_mimic_vae_to_npz.py ./mimic_vae_0_new.pt ./output/mimic_vae_npz
 """
 import argparse
 import psutil
