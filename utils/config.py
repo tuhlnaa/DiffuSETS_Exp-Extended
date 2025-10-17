@@ -40,11 +40,6 @@ def init_seeds(seed: int = 0, cuda_deterministic: bool = True) -> None:
             cudnn.deterministic = False
             cudnn.benchmark = True
 
-            
-class ConfigurationError(Exception):
-    """Raised when configuration is invalid or incomplete."""
-    pass
-
 
 class ConfigurationManager:
     """Handles configuration loading and validation."""
@@ -69,7 +64,7 @@ class ConfigurationManager:
         # Add OpenAI API key from environment
         openai_api_key = os.getenv('OPENAI_API_KEY')
         if not openai_api_key:
-            raise ConfigurationError("OPENAI_API_KEY environment variable not set")
+            raise ValueError("OPENAI_API_KEY environment variable not set")
         
         config['inference_setting']['OPENAI_API_KEY'] = openai_api_key
 
