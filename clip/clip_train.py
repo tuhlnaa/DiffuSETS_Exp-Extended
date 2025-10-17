@@ -7,7 +7,7 @@ import numpy as np
 from clip.clip_model import CLIP
 # from dataset.ptbxl_dataset import PtbxlDataset, PtbxlDataset_VAE
 from dataset.mimic_iv_ecg_dataset import DictDataset
-from vae.vae_model import VAE_Decoder
+from vae.vae_model import VAEDecoder
 
 import os
 import logging
@@ -230,7 +230,7 @@ if __name__ == '__main__':
     test_dataloader = DataLoader(train_dataset, batch_size=256, shuffle=True)
 
     decoder = None
-    decoder = VAE_Decoder()
+    decoder = VAEDecoder()
     vae_path = './checkpoints/vae_1/vae_model.pth'
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])

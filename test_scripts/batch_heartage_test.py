@@ -1,5 +1,5 @@
 import torch
-from vae.vae_model import VAE_Decoder
+from vae.vae_model import VAEDecoder
 from matplotlib import pyplot as plt
 import numpy as np 
 import wfdb
@@ -8,8 +8,8 @@ import pandas as pd
 import json
 import math
 from dataset.mimic_iv_ecg_dataset import DictDataset
-from unet.unet_conditional import ECGconditional
-from unet.unet_nocondition import ECGnocondition 
+from unet.unet_conditional import ECGConditional
+from unet.unet_nocondition import ECGNoCondition 
 from torch.utils.data import DataLoader
 from diffusers import DDPMScheduler
 import os
@@ -25,7 +25,7 @@ def find_power_of_ten(number):
     else:
         return "Number must be greater than 0"
     
-def generation_from_net(diffused_model: DDPMScheduler, net: ECGconditional, batch_size, device, text_embed, condition, use_vae_latent):
+def generation_from_net(diffused_model: DDPMScheduler, net: ECGConditional, batch_size, device, text_embed, condition, use_vae_latent):
     net.eval()
     n_channels = 4 if use_vae_latent else 12 
     dim = 128 if use_vae_latent else 1024
@@ -225,9 +225,9 @@ if __name__ == "__main__":
         n_channels = 4 if use_vae_latent else 12 
         num_train_steps = 1000
         if use_condition: 
-            net = ECGconditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
+            net = ECGConditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
         else:
-            net = ECGnocondition(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
+            net = ECGNoCondition(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
 
         unet_path = './prerequisites/unet_all.pth'
         net.load_state_dict(torch.load(unet_path, map_location=device))
@@ -236,7 +236,7 @@ if __name__ == "__main__":
         diffused_model = DDPMScheduler(num_train_timesteps=num_train_steps, beta_start=0.00085, beta_end=0.0120)
         diffused_model.set_timesteps(1000)
 
-        decoder = VAE_Decoder()
+        decoder = VAEDecoder()
         vae_path = './prerequisites/vae_model.pth'
         checkpoint = torch.load(vae_path, map_location=device)
         decoder.load_state_dict(checkpoint['decoder'])

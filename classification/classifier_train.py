@@ -6,7 +6,7 @@ import numpy as np
 
 from dataset.mimic_iv_ecg_dataset import DictDataset
 from classification.classifier import ResNetECG, TransformerECG 
-from vae.vae_model import VAE_Decoder 
+from vae.vae_model import VAEDecoder 
 
 from sklearn.metrics import confusion_matrix, f1_score 
 
@@ -166,7 +166,7 @@ if __name__ == '__main__':
     test_dataloader = DataLoader(test_dataset, batch_size=H_['batch_size'], shuffle=True)
 
     decoder = None
-    decoder = VAE_Decoder()
+    decoder = VAEDecoder()
     vae_path = './prerequisites/vae_model.pth'
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])

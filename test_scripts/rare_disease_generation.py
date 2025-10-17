@@ -12,8 +12,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from unet.unet_conditional import ECGconditional
-from vae.vae_model import VAE_Decoder
+from unet.unet_conditional import ECGConditional
+from vae.vae_model import VAEDecoder
 from utils.inference import generation_from_net
 from utils.config import init_seeds
 
@@ -33,7 +33,7 @@ if __name__ == '__main__':
 
     n_channels = 4
     num_train_steps = 1000
-    unet = ECGconditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
+    unet = ECGConditional(num_train_steps, kernel_size=7, num_levels=7, n_channels=n_channels)
     
     unet.load_state_dict(torch.load(unet_path, map_location=device))
     unet = unet.to(device)
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     diffused_model = DDPMScheduler(num_train_timesteps=num_train_steps, beta_start=0.00085, beta_end=0.0120)
     diffused_model.set_timesteps(1000)
 
-    decoder = VAE_Decoder()
+    decoder = VAEDecoder()
     
     checkpoint = torch.load(vae_path, map_location=device)
     decoder.load_state_dict(checkpoint['decoder'])

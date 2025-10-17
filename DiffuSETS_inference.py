@@ -32,16 +32,16 @@ class ModelLoader:
         
         # Import and initialize appropriate UNet variant
         if meta_config['condition']:
-            from unet.unet_conditional import ECGconditional
-            unet = ECGconditional(
+            from unet.unet_conditional import ECGConditional
+            unet = ECGConditional(
                 hyper_params['num_train_steps'],
                 kernel_size=hyper_params['unet_kernel_size'],
                 num_levels=hyper_params['unet_num_level'],
                 n_channels=n_channels
             )
         else:
-            from unet.unet_nocondition import ECGnocondition
-            unet = ECGnocondition(
+            from unet.unet_nocondition import ECGNoCondition
+            unet = ECGNoCondition(
                 hyper_params['num_train_steps'],
                 kernel_size=hyper_params['unet_kernel_size'],
                 num_levels=hyper_params['unet_num_level'],
@@ -61,12 +61,12 @@ class ModelLoader:
     @staticmethod
     def load_vae_decoder(vae_path: str) -> torch.nn.Module:
         """Load VAE decoder if required."""
-        from vae.vae_model import VAE_Decoder
+        from vae.vae_model import VAEDecoder
         
         if not os.path.exists(vae_path):
             raise FileNotFoundError(f"VAE model file not found: {vae_path}")
         
-        decoder = VAE_Decoder()
+        decoder = VAEDecoder()
         checkpoint = torch.load(vae_path, map_location='cpu')
         decoder.load_state_dict(checkpoint['decoder'])
         return decoder

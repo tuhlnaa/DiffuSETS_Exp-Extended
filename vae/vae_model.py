@@ -177,7 +177,7 @@ class VAE_Encoder(nn.Sequential):
         return x, mean, log_variance
 
 
-class VAE_Decoder(nn.Sequential):
+class VAEDecoder(nn.Sequential):
 
     def __init__(self):
         super().__init__(

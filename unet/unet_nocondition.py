@@ -228,9 +228,9 @@ class BottleneckNet(nn.Module):
         return out
 
 
-class ECGnocondition(nn.Module):
+class ECGNoCondition(nn.Module):
     def __init__(self, number_of_diffusions, kernel_size=3, num_levels=5, n_channels=4, text_embed_dim=1536):
-        super(ECGnocondition, self).__init__()
+        super(ECGNoCondition, self).__init__()
 
         self.num_levels = num_levels
         input_channels_list = []
@@ -317,7 +317,7 @@ class ECGnocondition(nn.Module):
 
 if __name__ == '__main__':
 
-    unet = ECGnocondition(1000)
+    unet = ECGNoCondition(1000)
     batch_size = 64 
     vae_latent = torch.randn((batch_size, 4, 128))
     t = torch.randperm(1000)[:batch_size]

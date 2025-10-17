@@ -56,13 +56,13 @@ def main():
     n_channels = 4 if use_vae_latent else 12 
 
     if meta['condition']:
-        from unet.unet_conditional import ECGconditional 
+        from unet.unet_conditional import ECGConditional 
 
-        unet = ECGconditional(h_['num_train_steps'], kernel_size=h_['unet_kernel_size'], num_levels=h_['unet_num_level'], n_channels=n_channels)
+        unet = ECGConditional(h_['num_train_steps'], kernel_size=h_['unet_kernel_size'], num_levels=h_['unet_num_level'], n_channels=n_channels)
     else: 
-        from unet.unet_nocondition import ECGnocondition 
+        from unet.unet_nocondition import ECGNoCondition 
 
-        unet = ECGnocondition(h_['num_train_steps'], kernel_size=h_['unet_kernel_size'], num_levels=h_['unet_num_level'], n_channels=n_channels)
+        unet = ECGNoCondition(h_['num_train_steps'], kernel_size=h_['unet_kernel_size'], num_levels=h_['unet_num_level'], n_channels=n_channels)
 
     diffused_model = DDPMScheduler(num_train_timesteps=h_['num_train_steps'], beta_start=h_['beta_start'], beta_end=h_['beta_end'])
 
@@ -77,10 +77,10 @@ def main():
                     h_=h_, 
                     logger=logger)
     else:
-        from vae.vae_model import VAE_Decoder 
+        from vae.vae_model import VAEDecoder 
         from utils.train_novae import train_model_novae
 
-        decoder = VAE_Decoder() 
+        decoder = VAEDecoder() 
         checkpoint = torch.load(roots['vae_path'], map_location='cpu')
         decoder.load_state_dict(checkpoint['decoder'])
 

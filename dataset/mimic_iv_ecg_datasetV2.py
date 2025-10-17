@@ -17,35 +17,52 @@ from typing import Tuple, Dict, Any
 class MIMIC_IV_ECG_VAE_Dataset(Dataset):
     """
     Dataset class for loading MIMIC-IV-ECG VAE latent representations from .npz files.
-    
+   
     Compatible with DictDataset interface - returns (data, label) tuples where:
     - data: torch.Tensor of shape (num_leads, latent_dim)
     - label: dict containing metadata (text, subject_id, hr, age, gender, text_embed)
-    
+   
     Args:
         data_dir: Directory containing all .npz files
+        subset_proportion: Proportion of dataset to use (0.0 to 1.0). Default is 1.0 (use all data).
     """
-    
-    def __init__(self, data_dir: str):
+   
+    def __init__(self, data_dir: str, subset_proportion: float = 1.0):
         self.data_dir = Path(data_dir)
-        self.file_paths = sorted(self.data_dir.glob("*.npz"))
-        
-        if len(self.file_paths) == 0:
-            raise FileNotFoundError(f"No .npz files found in {self.data_dir}")
+        all_file_paths = sorted(self.data_dir.glob("*.npz"))
 
-    
+        # Validate
+        if len(all_file_paths) == 0:
+            raise FileNotFoundError(f"No .npz files found in {self.data_dir}")
+        
+        if not 0.0 < subset_proportion <= 1.0:
+            raise ValueError(f"subset_proportion must be between 0.0 and 1.0, got {subset_proportion}")
+        
+        # Select subset of files if needed
+        if subset_proportion < 1.0:
+            num_files = int(len(all_file_paths) * subset_proportion)
+            num_files = max(1, num_files)
+            
+            indices = np.random.choice(len(all_file_paths), size=num_files, replace=False)
+            self.file_paths = [all_file_paths[i] for i in sorted(indices)]
+        else:
+            self.file_paths = all_file_paths
+        
+        print(f"Using {len(self.file_paths)} out of {len(all_file_paths)} files ({subset_proportion*100:.1f}%)")
+
+   
     def __len__(self) -> int:
         """Return the total number of samples."""
         return len(self.file_paths)
-    
+   
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
         Load and return a single sample.
-        
+       
         Args:
             idx: Sample index
-        
+       
         Returns:
             Tuple of (data, label):
             - data: torch.Tensor of shape (num_leads, latent_dim), e.g., (4, 128)
@@ -59,10 +76,10 @@ class MIMIC_IV_ECG_VAE_Dataset(Dataset):
         """
         # Load .npz file
         npz_data = np.load(self.file_paths[idx], allow_pickle=True)
-        
+       
         # Extract data tensor
         data = torch.from_numpy(npz_data['data']).float()
-        
+       
         # Extract label fields
         label = {
             'text': str(npz_data['label_text'].item()),
@@ -72,11 +89,10 @@ class MIMIC_IV_ECG_VAE_Dataset(Dataset):
             'gender': str(npz_data['label_gender'].item()),
             'text_embed': npz_data['label_text_embed'].tolist(),
         }
-        
+       
         return data, label
+    
 
-
-# Example usage and testing
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
     

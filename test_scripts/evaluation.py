@@ -4,9 +4,9 @@ import os
 import json
 import numpy as np
 from scipy.linalg import sqrtm
-from unet.unet_conditional import ECGconditional 
-from unet.unet_nocondition import ECGnocondition 
-from vae.vae_model import VAE_Decoder
+from unet.unet_conditional import ECGConditional 
+from unet.unet_nocondition import ECGNoCondition 
+from vae.vae_model import VAEDecoder
 from clip.clip_model import CLIP
 from diffusers import DDPMScheduler
 
@@ -249,7 +249,7 @@ if __name__ == "__main__":
     diffused_model.set_timesteps(n_inference_steps)
 
     # VAE
-    decoder = VAE_Decoder()
+    decoder = VAEDecoder()
     # VAE_path
     vae_path = './prerequisites/vae_model.pth'
     checkpoint = torch.load(vae_path, map_location=device)

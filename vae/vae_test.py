@@ -1,5 +1,5 @@
 import torch
-from vae.vae_model import VAE_Encoder, VAE_Decoder, loss_function
+from vae.vae_model import VAE_Encoder, VAEDecoder, loss_function
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
@@ -17,7 +17,7 @@ if __name__ == '__main__':
     encoder = VAE_Encoder()
     encoder.load_state_dict(vae_weight_dict['encoder'])
     encoder.to(device)
-    decoder = VAE_Decoder()
+    decoder = VAEDecoder()
     decoder.load_state_dict(vae_weight_dict['decoder'])
     decoder.to(device)
 

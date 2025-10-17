@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
-from vae.vae_model import VAE_Decoder, VAE_Encoder, loss_function
+from vae.vae_model import VAEDecoder, VAE_Encoder, loss_function
 
 import os
 from dataset.mimic_iv_ecg_dataset import MIMIC_IV_ECG_Dataset
@@ -51,7 +51,7 @@ if __name__ == '__main__':
     train_dataloader = DataLoader(mimic_train, batch_size=H_['batch_size'])
 
     encoder = VAE_Encoder().to(device)
-    decoder = VAE_Decoder().to(device)
+    decoder = VAEDecoder().to(device)
 
     def train_loop(dataloader, encoder, decoder, loss_fn, optimizer, scheduler, kld_weight):
         size = len(dataloader.dataset)
