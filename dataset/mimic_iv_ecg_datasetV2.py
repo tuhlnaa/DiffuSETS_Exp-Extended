@@ -13,6 +13,7 @@ import numpy as np
 from pathlib import Path
 from torch.utils.data import Dataset
 from typing import Tuple, Dict, Any
+from torch.utils.data import DataLoader
 
 
 class MIMIC_IV_ECG_VAE_Dataset(Dataset):
@@ -136,7 +137,7 @@ if __name__ == "__main__":
     from torch.utils.data import DataLoader
     
     # Create dataset - automatically finds all .npz files
-    dataset = MIMIC_IV_ECG_VAE_Dataset(data_dir=r"D:\Kai\Dataset_Preprocessing\MIMIC-IV-ECG\mimic_vae_npz")
+    dataset = MIMIC_IV_ECG_VAE_Dataset(data_dir=r"./MIMIC-IV-ECG/mimic_vae_npz")
     
     print(f"\nDataset length: {len(dataset)}")
     

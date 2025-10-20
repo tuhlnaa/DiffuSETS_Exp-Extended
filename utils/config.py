@@ -4,18 +4,17 @@ Based on: https://github.com/huggingface/pytorch-image-models/blob/main/train.py
 """
 import json
 import os
-from omegaconf import OmegaConf
-import torch
 import random
+import torch
 import numpy as np
 
-from torch.backends import cudnn
-from typing import Any, Dict, Union
+from omegaconf import OmegaConf
 from pathlib import Path
-from rich.table import Table
-from rich import box, print
 from rich.pretty import Pretty
-from rich.console import Console
+from rich.table import Table
+from torch.backends import cudnn
+from rich import box, print
+from typing import Any, Dict, Union
 
 
 def init_seeds(seed: int = 0, cuda_deterministic: bool = True) -> None:

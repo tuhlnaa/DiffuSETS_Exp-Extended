@@ -6,6 +6,8 @@ import wandb
 
 from diffusers import DDPMScheduler
 from pathlib import Path
+from rich.logging import RichHandler
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from typing import Dict, Any
 
@@ -18,38 +20,20 @@ from utils.train import train_model
 from utils.train_novae import train_model_novae
 from vae.vae_model import VAEDecoder
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s", 
+    handlers=[RichHandler()]
+)
+logger = logging.getLogger(__name__)
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='DiffuSETS Training')
     parser.add_argument('config', type=str, help='Path to training configuration file')
     return parser.parse_args()
-
-
-def setup_logger(log_dir: Path, exp_name: str) -> logging.Logger:
-    """Configure and return a logger with file and console handlers."""
-    logger = logging.getLogger(exp_name)
-    logger.setLevel(logging.INFO)
-    
-    # Avoid duplicate handlers
-    if logger.handlers:
-        return logger
-    
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    
-    # File handler
-    log_file = log_dir / 'train.log'
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setFormatter(formatter)
-    
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-    
-    return logger
 
 
 def get_next_experiment_dir(checkpoints_root: Path, exp_type: str) -> Path:
@@ -138,7 +122,6 @@ def main() -> None:
     save_weights_path = get_next_experiment_dir(checkpoints_root, meta['exp_type'])
     
     # Setup logging
-    logger = setup_logger(save_weights_path, save_weights_path.name)
     logger.info(f"Experiment metadata: {meta}")
     logger.info(f"Hyperparameters: {hyperparams}")
     

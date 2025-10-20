@@ -27,6 +27,74 @@ from dataset.mimic_iv_ecg_datasetV2 import create_dataloader
 console = Console()
 
 
+def test_dataloaders(
+    train_loader: DataLoader,
+    val_loader: DataLoader = None,
+    num_batches: int = 2,
+) -> None:
+    """Test dataloaders by iterating through batches."""
+    
+    # Dataset Statistics
+    stats_table = Table(title="Dataset Statistics", box=box.DOUBLE)
+    stats_table.add_column("Metric", style="cyan", no_wrap=True)
+    stats_table.add_column("Training", style="green", justify="right")
+    if val_loader is not None:
+        stats_table.add_column("Validation", style="yellow", justify="right")
+    
+    stats_table.add_row("Samples", str(len(train_loader.dataset)), 
+                        str(len(val_loader.dataset)) if val_loader else "N/A")
+    stats_table.add_row("Batches", str(len(train_loader)), 
+                        str(len(val_loader)) if val_loader else "N/A")
+    
+    console.print(stats_table)
+    console.print()
+    
+    # Test training loader
+    console.print("[bold green]Training DataLoader Samples:[/bold green]")
+    for batch_idx, (data, labels) in enumerate(train_loader):
+        print_batch_info(batch_idx, data, labels)
+        if batch_idx >= num_batches - 1:
+            break
+    
+    # Test validation loader if provided
+    if val_loader is not None:
+        console.print("[bold yellow]Validation DataLoader Samples:[/bold yellow]")
+        for batch_idx, (data, labels) in enumerate(val_loader):
+            print_batch_info(batch_idx, data, labels)
+            if batch_idx >= num_batches - 1:
+                break
+
+
+def collate_fn(batch):
+    """Custom collate function for batching VAE dataset samples.
+    
+    Args:
+        batch: List of (data, label) tuples
+    
+    Returns:
+        Tuple of (batched_data, batched_labels)
+    """
+    data_list = []
+    label_dict = {
+        'text': [],
+        'subject_id': [],
+        'hr': [],
+        'age': [],
+        'gender': [],
+        'text_embed': [],
+    }
+    
+    for data, label in batch:
+        data_list.append(data)
+        for key in label_dict.keys():
+            label_dict[key].append(label[key])
+    
+    # Stack data tensors
+    batched_data = torch.stack(data_list, dim=0)
+    
+    return batched_data, label_dict
+
+
 def print_batch_info(
     batch_idx: int,
     data: torch.Tensor,
@@ -90,74 +158,6 @@ def print_batch_info(
     
     console.print(label_table)
     console.print()
-
-
-def collate_fn(batch):
-    """Custom collate function for batching VAE dataset samples.
-    
-    Args:
-        batch: List of (data, label) tuples
-    
-    Returns:
-        Tuple of (batched_data, batched_labels)
-    """
-    data_list = []
-    label_dict = {
-        'text': [],
-        'subject_id': [],
-        'hr': [],
-        'age': [],
-        'gender': [],
-        'text_embed': [],
-    }
-    
-    for data, label in batch:
-        data_list.append(data)
-        for key in label_dict.keys():
-            label_dict[key].append(label[key])
-    
-    # Stack data tensors
-    batched_data = torch.stack(data_list, dim=0)
-    
-    return batched_data, label_dict
-
-
-def test_dataloaders(
-    train_loader: DataLoader,
-    val_loader: DataLoader = None,
-    num_batches: int = 2,
-) -> None:
-    """Test dataloaders by iterating through batches."""
-    
-    # Dataset Statistics
-    stats_table = Table(title="Dataset Statistics", box=box.DOUBLE)
-    stats_table.add_column("Metric", style="cyan", no_wrap=True)
-    stats_table.add_column("Training", style="green", justify="right")
-    if val_loader is not None:
-        stats_table.add_column("Validation", style="yellow", justify="right")
-    
-    stats_table.add_row("Samples", str(len(train_loader.dataset)), 
-                        str(len(val_loader.dataset)) if val_loader else "N/A")
-    stats_table.add_row("Batches", str(len(train_loader)), 
-                        str(len(val_loader)) if val_loader else "N/A")
-    
-    console.print(stats_table)
-    console.print()
-    
-    # Test training loader
-    console.print("[bold green]Training DataLoader Samples:[/bold green]")
-    for batch_idx, (data, labels) in enumerate(train_loader):
-        print_batch_info(batch_idx, data, labels)
-        if batch_idx >= num_batches - 1:
-            break
-    
-    # Test validation loader if provided
-    if val_loader is not None:
-        console.print("[bold yellow]Validation DataLoader Samples:[/bold yellow]")
-        for batch_idx, (data, labels) in enumerate(val_loader):
-            print_batch_info(batch_idx, data, labels)
-            if batch_idx >= num_batches - 1:
-                break
 
 
 def parse_args() -> argparse.Namespace:
