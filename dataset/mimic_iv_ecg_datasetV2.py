@@ -7,8 +7,9 @@ Usage:
     dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 """
 
-import numpy as np
 import torch
+import numpy as np
+
 from pathlib import Path
 from torch.utils.data import Dataset
 from typing import Tuple, Dict, Any
@@ -92,6 +93,44 @@ class MIMIC_IV_ECG_VAE_Dataset(Dataset):
        
         return data, label
     
+
+def create_dataloader(
+    data_dir: str,
+    batch_size: int,
+    subset_proportion: float = 1.0,
+    shuffle: bool = True,
+) -> DataLoader:
+    """Create a DataLoader for MIMIC-IV-ECG VAE dataset.
+    
+    Args:
+        data_dir: Directory containing .npz files
+        batch_size: Batch size for DataLoader
+        subset_proportion: Proportion of dataset to use (0.0 to 1.0)
+        shuffle: Whether to shuffle data
+
+    Returns:
+        Configured DataLoader instance
+    """
+    dataset = MIMIC_IV_ECG_VAE_Dataset(
+        data_dir=data_dir,
+        subset_proportion=subset_proportion,
+    )
+
+    if len(dataset) == 0:
+        raise ValueError(f"Dataset is empty! No .npz files found in {data_dir}")
+    
+    data_loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        pin_memory=True,
+        drop_last=True,
+        num_workers=0,
+    )
+    print(f"Dataset samples: {len(dataset)}, DataLoader batches: {len(data_loader)}")
+
+    return data_loader
+
 
 if __name__ == "__main__":
     from torch.utils.data import DataLoader

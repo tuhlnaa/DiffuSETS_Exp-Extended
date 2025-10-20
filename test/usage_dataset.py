@@ -1,92 +1,30 @@
 """
-Script for loading and testing NPZ-based dataset.
-
-This script loads the individual NPZ files created by split_mimic_vae_to_npz.py
-and provides utilities for testing the dataset loading.
+Test script for MIMIC-IV-ECG VAE dataset loading and validation.
 
 Usage:
-    python test/usage_dataset.py ./output/mimic_vae_npz
-    python test/usage_dataset.py ./output/mimic_vae_npz --batch_size 8 --num_batches 3
+    python test/usage_dataset.py ./data/mimic_vae_train
+    python test/usage_dataset.py ./data/mimic_vae_train 8 --subset_proportion 0.1
+    python test/usage_dataset.py ./data/mimic_vae_train 8 --num_batches 3
 """
 
 import argparse
 import sys
 import torch
-import numpy as np
 
 from pathlib import Path
-from torch.utils.data import Dataset, DataLoader
+from rich import box
 from rich.console import Console
 from rich.table import Table
-from rich import box
+from torch.utils.data import DataLoader
 
 # Import custom modules
 PROJECT_ROOT = Path(__file__).parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from dataset.mimic_iv_ecg_datasetV2 import MIMIC_IV_ECG_VAE_Dataset
+from utils.config import RichPrinter, init_seeds
+from dataset.mimic_iv_ecg_datasetV2 import create_dataloader
 
 console = Console()
-
-
-def create_dataloader(
-    npz_dir: str,
-    batch_size: int,
-    shuffle: bool = True,
-    num_workers: int = 0,
-    pin_memory: bool = True,
-) -> DataLoader:
-    """
-    Create a DataLoader for NPZ dataset.
-    
-    Args:
-        npz_dir: Directory containing NPZ files
-        batch_size: Batch size for DataLoader
-        shuffle: Whether to shuffle the data
-        num_workers: Number of worker processes for data loading
-        pin_memory: Whether to pin memory for faster GPU transfer
-    
-    Returns:
-        DataLoader instance
-    """
-    dataset = MIMIC_IV_ECG_VAE_Dataset(npz_dir)
-    
-    # Custom collate function to handle label dictionaries
-    def collate_fn(batch):
-        """Collate function for batching data with label dictionaries."""
-        data_list = []
-        label_dicts = []
-        
-        for data, label in batch:
-            data_list.append(data)
-            label_dicts.append(label)
-        
-        # Stack data tensors
-        batch_data = torch.stack(data_list)
-        
-        # Combine label dictionaries
-        batch_labels = {}
-        if len(label_dicts) > 0:
-            # Get all keys from first label dict
-            label_keys = label_dicts[0].keys()
-            
-            for key in label_keys:
-                # Stack all values for this key
-                values = [label[key] for label in label_dicts]
-                batch_labels[key] = torch.stack(values)
-        
-        return batch_data, batch_labels
-    
-    dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        collate_fn=collate_fn,
-    )
-    
-    return dataloader
 
 
 def print_batch_info(
@@ -95,7 +33,9 @@ def print_batch_info(
     labels: dict,
 ) -> None:
     """Print information about a single batch using rich tables."""
-    table = Table(title=f"Batch {batch_idx + 1}", box=box.ROUNDED)
+    
+    # Main data table
+    table = Table(title=f"Batch {batch_idx + 1} - Data Tensors", box=box.ROUNDED)
     
     table.add_column("Tensor", style="cyan", no_wrap=True)
     table.add_column("Shape", style="bright_white")
@@ -103,103 +43,209 @@ def print_batch_info(
     table.add_column("Device", style="yellow")
     table.add_column("Range", style="bright_cyan")
     
-    # Data tensor
     table.add_row(
-        "Data",
+        "VAE Latents",
         str(data.shape),
         str(data.dtype),
         str(data.device),
         f"[{data.min():.4f}, {data.max():.4f}]",
     )
     
-    # Label tensors
-    for label_key, label_tensor in labels.items():
-        table.add_row(
-            f"Label: {label_key}",
-            str(label_tensor.shape),
-            str(label_tensor.dtype),
-            str(label_tensor.device),
-            f"[{label_tensor.min():.4f}, {label_tensor.max():.4f}]",
-        )
-    
     console.print(table)
+    
+    # Label metadata table
+    label_table = Table(title=f"Batch {batch_idx + 1} - Label Metadata", box=box.ROUNDED)
+    label_table.add_column("Field", style="cyan", no_wrap=True)
+    label_table.add_column("Type", style="green")
+    label_table.add_column("Sample Values", style="bright_white")
+    
+    # Text field
+    texts = labels['text']
+    sample_text = texts[0][:80] + "..." if len(texts[0]) > 80 else texts[0]
+    label_table.add_row("text", "str", f"'{sample_text}'")
+    
+    # Subject ID
+    subject_ids = labels['subject_id']
+    label_table.add_row("subject_id", "int", f"{subject_ids[0]}, {subject_ids[1] if len(subject_ids) > 1 else '...'}, ...")
+    
+    # Heart rate
+    hrs = labels['hr']
+    hr_sample = f"{hrs[0]:.1f}, {hrs[1]:.1f}, ..." if len(hrs) > 1 else f"{hrs[0]:.1f}"
+    label_table.add_row("hr", "float", hr_sample)
+    
+    # Age
+    ages = labels['age']
+    age_sample = f"{ages[0]}, {ages[1]}, ..." if len(ages) > 1 else f"{ages[0]}"
+    label_table.add_row("age", "int", age_sample)
+    
+    # Gender
+    genders = labels['gender']
+    gender_sample = f"'{genders[0]}', '{genders[1]}', ..." if len(genders) > 1 else f"'{genders[0]}'"
+    label_table.add_row("gender", "str", gender_sample)
+    
+    # Text embedding
+    text_embeds = labels['text_embed']
+    embed_shape = f"({len(text_embeds)}, {len(text_embeds[0])})"
+    label_table.add_row("text_embed", "list[float]", f"shape={embed_shape}")
+    
+    console.print(label_table)
     console.print()
 
 
-def test_dataloader(
-    dataloader: DataLoader,
+def collate_fn(batch):
+    """Custom collate function for batching VAE dataset samples.
+    
+    Args:
+        batch: List of (data, label) tuples
+    
+    Returns:
+        Tuple of (batched_data, batched_labels)
+    """
+    data_list = []
+    label_dict = {
+        'text': [],
+        'subject_id': [],
+        'hr': [],
+        'age': [],
+        'gender': [],
+        'text_embed': [],
+    }
+    
+    for data, label in batch:
+        data_list.append(data)
+        for key in label_dict.keys():
+            label_dict[key].append(label[key])
+    
+    # Stack data tensors
+    batched_data = torch.stack(data_list, dim=0)
+    
+    return batched_data, label_dict
+
+
+def test_dataloaders(
+    train_loader: DataLoader,
+    val_loader: DataLoader = None,
     num_batches: int = 2,
 ) -> None:
-    """Test dataloader by iterating through batches."""
+    """Test dataloaders by iterating through batches."""
     
     # Dataset Statistics
     stats_table = Table(title="Dataset Statistics", box=box.DOUBLE)
     stats_table.add_column("Metric", style="cyan", no_wrap=True)
-    stats_table.add_column("Value", style="green", justify="right")
+    stats_table.add_column("Training", style="green", justify="right")
+    if val_loader is not None:
+        stats_table.add_column("Validation", style="yellow", justify="right")
     
-    stats_table.add_row("Total Samples", str(len(dataloader.dataset)))
-    stats_table.add_row("Total Batches", str(len(dataloader)))
-    stats_table.add_row("Batch Size", str(dataloader.batch_size))
+    stats_table.add_row("Samples", str(len(train_loader.dataset)), 
+                        str(len(val_loader.dataset)) if val_loader else "N/A")
+    stats_table.add_row("Batches", str(len(train_loader)), 
+                        str(len(val_loader)) if val_loader else "N/A")
     
     console.print(stats_table)
     console.print()
     
-    # Iterate through batches
-    for batch_idx, (data, labels) in enumerate(dataloader):
+    # Test training loader
+    console.print("[bold green]Training DataLoader Samples:[/bold green]")
+    for batch_idx, (data, labels) in enumerate(train_loader):
         print_batch_info(batch_idx, data, labels)
-        
         if batch_idx >= num_batches - 1:
             break
+    
+    # Test validation loader if provided
+    if val_loader is not None:
+        console.print("[bold yellow]Validation DataLoader Samples:[/bold yellow]")
+        for batch_idx, (data, labels) in enumerate(val_loader):
+            print_batch_info(batch_idx, data, labels)
+            if batch_idx >= num_batches - 1:
+                break
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Test NPZ dataset loading",
+        description="Test MIMIC-IV-ECG VAE dataset loading and preprocessing",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     # Required arguments
-    parser.add_argument("npz_dir", type=str, help="Directory containing NPZ files (sample_*.npz)")
+    required = parser.add_argument_group("required arguments")
+    required.add_argument("train_dir", type=str, help="Directory containing training .npz files")
 
     # Optional arguments
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for DataLoader")
-    parser.add_argument("--num_batches", type=int, default=2, help="Number of batches to display for testing")
-    parser.add_argument("--shuffle",action="store_true",help="Shuffle the data")
-    parser.add_argument("--num_workers", type=int, default=0, help="Number of worker processes for data loading")
+    required.add_argument("--batch_size", type=int, default=8, help="Batch size for DataLoader")
+    parser.add_argument("--val_dir", type=str, default=None, help="Directory containing validation .npz files")
+    parser.add_argument("--subset_proportion", type=float, default=1.0, help="Proportion of dataset to use (0.0 to 1.0)")
+    parser.add_argument("--num_batches", type=int, default=1, help="Number of batches to display for testing")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+
+    args = parser.parse_args()
+    RichPrinter.print_config(args, "Test Configuration")
     
-    return parser.parse_args()
+    return args
 
 
 def main() -> None:
     """Main execution function."""
     args = parse_args()
+    init_seeds(args.seed)
     
-    # Print configuration
-    config_table = Table(title="Configuration", box=box.DOUBLE)
-    config_table.add_column("Parameter", style="cyan")
-    config_table.add_column("Value", style="green")
-    
-    config_table.add_row("NPZ Directory", args.npz_dir)
-    config_table.add_row("Batch Size", str(args.batch_size))
-    config_table.add_row("Num Batches", str(args.num_batches))
-    config_table.add_row("Shuffle", str(args.shuffle))
-    config_table.add_row("Num Workers", str(args.num_workers))
-    
-    console.print(config_table)
-    console.print()
-    
-    # Create dataloader
-    dataloader = create_dataloader(
-        npz_dir=args.npz_dir,
+    # Create training dataloader with custom collate function
+    train_loader = create_dataloader(
+        data_dir=args.train_dir,
         batch_size=args.batch_size,
-        shuffle=args.shuffle,
-        num_workers=args.num_workers,
+        subset_proportion=args.subset_proportion,
+        shuffle=True,
     )
+    train_loader.collate_fn = collate_fn
     
-    # Test dataloader
-    test_dataloader(dataloader, args.num_batches)
+    # Create validation dataloader if specified
+    val_loader = None
+    if args.val_dir is not None:
+        val_loader = create_dataloader(
+            data_dir=args.val_dir,
+            batch_size=args.batch_size,
+            subset_proportion=args.subset_proportion,
+            shuffle=False,
+        )
+        val_loader.collate_fn = collate_fn
+    
+    # Test dataloaders
+    test_dataloaders(train_loader, val_loader, args.num_batches)
 
 
 if __name__ == "__main__":
     main()
+
+"""
+Using 794372 out of 794372 files (100.0%)
+Dataset samples: 794372, DataLoader batches: 99296
+
+     Dataset Statistics
+╔═════════╦══════════╦═════╗
+║ Metric  ║ Training ║     ║
+╠═════════╬══════════╬═════╣
+║ Samples ║   794372 ║ N/A ║
+║ Batches ║    99296 ║ N/A ║
+╚═════════╩══════════╩═════╝
+
+Training DataLoader Samples:
+                                Batch 1 - Data Tensors
+╭─────────────┬─────────────────────────┬───────────────┬────────┬───────────────────╮
+│ Tensor      │ Shape                   │ Dtype         │ Device │ Range             │
+├─────────────┼─────────────────────────┼───────────────┼────────┼───────────────────┤
+│ VAE Latents │ torch.Size([8, 4, 128]) │ torch.float32 │ cpu    │ [-0.7821, 0.6119] │
+╰─────────────┴─────────────────────────┴───────────────┴────────┴───────────────────╯
+
+                                           Batch 1 - Label Metadata
+╭────────────┬───────┬───────────────────────────────────────────────────────────────────────────────────────╮
+│ Field      │ Type  │ Sample Values                                                                         │
+├────────────┼───────┼───────────────────────────────────────────────────────────────────────────────────────┤
+│ text       │ str   │ 'Atrial fibrillation.|Left axis deviation|Incomplete LBBB|Anteroseptal infarct - ...' │
+│ subject_id │ int   │ 10986205, 15554944, ...                                                               │
+│ hr         │ float │ 87.9, 90.0, ...                                                                       │
+│ age        │ int   │ 84, 88, ...                                                                           │
+│ gender     │ str   │ 'F', 'F', ...                                                                         │
+│ text_embed │ list  │ shape=(8, 1536)                                                                       │
+╰────────────┴───────┴───────────────────────────────────────────────────────────────────────────────────────╯
+
+"""

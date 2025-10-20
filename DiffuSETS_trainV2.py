@@ -1,21 +1,19 @@
 import argparse
 import json
 import logging
-import random
 import torch
-import numpy as np
+import wandb
 
 from diffusers import DDPMScheduler
 from pathlib import Path
-from torch.backends import cudnn
 from torch.utils.data import DataLoader
 from typing import Dict, Any
 
 # Import custom modules
-from dataset.mimic_iv_ecg_dataset import DictDataset
 from dataset.mimic_iv_ecg_datasetV2 import MIMIC_IV_ECG_VAE_Dataset
 from unet.unet_conditional import ECGConditional
 from unet.unet_nocondition import ECGNoCondition
+from utils.config import init_seeds
 from utils.train import train_model
 from utils.train_novae import train_model_novae
 from vae.vae_model import VAEDecoder
@@ -26,29 +24,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='DiffuSETS Training')
     parser.add_argument('config', type=str, help='Path to training configuration file')
     return parser.parse_args()
-
-
-def init_seeds(seed: int = 42, cuda_deterministic: bool = True) -> None:
-    """Initialize random seeds for reproducibility.
-    
-    Args:
-        seed: Random seed value
-        cuda_deterministic: If True, use deterministic CUDA operations (slower but reproducible)
-    """
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        
-        if cuda_deterministic:
-            cudnn.deterministic = True
-            cudnn.benchmark = False
-        else:
-            cudnn.deterministic = False
-            cudnn.benchmark = True
 
 
 def setup_logger(log_dir: Path, exp_name: str) -> logging.Logger:
@@ -150,6 +125,9 @@ def main() -> None:
     config = load_config(args.config)
     init_seeds()
 
+    wandb.init(project="DiffuSETS", group="Training", entity=None)
+    wandb.run.name = "Experiment 1 V2"
+
     # Extract configuration sections
     meta = config['meta']
     dependencies = config['dependencies']
@@ -165,9 +143,9 @@ def main() -> None:
     logger.info(f"Hyperparameters: {hyperparams}")
     
     # Load dataset
-    dataset_path = Path(dependencies['dataset_path'])
     #train_dataset = DictDataset(dataset_path)
-    train_dataset = MIMIC_IV_ECG_VAE_Dataset(dataset_path, subset_proportion=0.01)
+    dataset_path = Path(dependencies['dataset_path'])
+    train_dataset = MIMIC_IV_ECG_VAE_Dataset(dataset_path, subset_proportion=0.005)
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=hyperparams['batch_size'],

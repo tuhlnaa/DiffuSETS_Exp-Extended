@@ -1,8 +1,11 @@
-import torch
-import torch.nn.functional as F
-import time
 import os
+import time
+import torch
+import wandb
+
 import numpy as np
+import torch.nn.functional as F
+
 
 def train_epoch_channels(dataloader, 
                          unet, 
@@ -113,6 +116,10 @@ def train_model(meta,
                                          condition=meta['condition'], 
                                          number_of_repetition=1)
         logger.info(f'Epoch: {i}, mean loss: {mean_loss:.4f}, lr: {scheduler.get_last_lr()[0]:.6f}')
+
+        # Log metrics to wandb
+        wandb.log({"Train_loss": mean_loss,}, step=i)
+
         if (mean_loss < min_loss):
             min_loss = mean_loss
             torch.save(unet.state_dict(), os.path.join(save_weights_path, 'unet_best.pth'))
