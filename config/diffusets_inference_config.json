@@ -8,7 +8,7 @@
     }, 
 
     "dependencies": {
-        "dataset_path": "./checkpoints/mimic_vae_0_new.pt",
+        "dataset_path": "./MIMIC-IV-ECG/mimic_vae_npz",
         "output_dir": "./output", 
         "vae_path": "./checkpoints/vae_model.pth"
     },
@@ -21,7 +21,8 @@
         "unet_kernel_size": 7, 
         "unet_num_level": 7, 
         "beta_start": 0.00085, 
-        "beta_end": 0.0120
+        "beta_end": 0.0120,
+        "checkpoint_freq": 50
     }, 
 
     "inference_setting": {

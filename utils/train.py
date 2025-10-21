@@ -4,20 +4,43 @@ import torch
 import wandb
 
 import numpy as np
+import torch.nn as nn
 import torch.nn.functional as F
 
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
+from torch.utils.data import DataLoader
+from typing import Dict, Any, Optional
 
-def train_epoch_channels(dataloader, 
-                         unet, 
-                         diffused_model, 
-                         condition, 
-                         optimizer, 
-                         scheduler,
-                         device, 
-                         number_of_repetition=1):
+
+def train_epoch(
+    dataloader: DataLoader,
+    unet: nn.Module,
+    diffusion_scheduler: Any,
+    optimizer: Optimizer,
+    scheduler: LRScheduler,
+    device: torch.device,
+    use_conditions: bool = False,
+    num_repetitions: int = 1,
+) -> float:
+    """Train for one epoch.
+    
+    Args:
+        dataloader: Training data loader
+        unet: U-Net model
+        diffusion_scheduler: Diffusion noise scheduler
+        optimizer: Optimizer instance
+        scheduler: Learning rate scheduler
+        device: Training device
+        use_conditions: Whether to use conditional inputs
+        num_repetitions: Number of times to repeat the epoch
+        
+    Returns:
+        Average loss over the epoch
+    """
     loss_list = []
     unet.train()
-    for _ in range(number_of_repetition):
+    for _ in range(num_repetitions):
         for data, label in dataloader:
             # (1536, B) 
             text_embed = label['text_embed']
@@ -31,16 +54,16 @@ def train_epoch_channels(dataloader,
 
             # t = torch.randperm(diffused_model.config.num_train_timesteps-2)[:latent.shape[0]] + 1 
             # compatible with larger batch size
-            t = torch.randint(1, diffused_model.config.num_train_timesteps - 1, (latent.shape[0],))
+            t = torch.randint(1, diffusion_scheduler.config.num_train_timesteps - 1, (latent.shape[0],))
 
             noise = torch.randn(latent.shape, device=latent.device)
-            xt = diffused_model.add_noise(latent, noise, t)
+            xt = diffusion_scheduler.add_noise(latent, noise, t)
 
             xt = xt.to(device)
             t = t.to(device)
             noise = noise.to(device)
 
-            if condition:
+            if use_conditions:
                 gender = []
                 age = label['age']
                 hr = label['hr']
@@ -74,7 +97,10 @@ def train_epoch_channels(dataloader,
 
                 for key in condition_dict:
                     condition_dict[key] = condition_dict[key].to(device)
-
+                # print(xt.shape, t.shape, text_embed.shape)
+                # for i in condition_dict.keys():
+                #     print(condition_dict[i].shape)
+                # quit()
                 noise_estim = unet(xt, t, text_embed, condition_dict)
             else: 
                 noise_estim = unet(xt, t, text_embed)
@@ -90,42 +116,79 @@ def train_epoch_channels(dataloader,
     return sum(loss_list) / len(loss_list)
 
 
-def train_model(meta, 
-                save_weights_path, 
-                dataloader,  
-                diffused_model, 
-                unet, 
-                hyperparams, 
-                logger):
- 
-    device = torch.device(meta['device'] if torch.cuda.is_available() else "cpu")
+def train_model(
+    config: Dict[str, Any],
+    save_dir: str,
+    dataloader: DataLoader,
+    diffusion_scheduler: Any,
+    unet: nn.Module,
+    hyperparams: Dict[str, Any],
+    logger: Any,
+) -> None:
+    """Train the diffusion model.
+    
+    Args:
+        config: Configuration dictionary with 'device' and 'condition' keys
+        save_dir: Directory to save model checkpoints
+        dataloader: Training data loader
+        diffusion_scheduler: Diffusion noise scheduler
+        unet: U-Net model to train
+        hyperparams: Hyperparameters dict with 'lr', 'epochs', 'checkpoint_freq'
+        logger: Logger instance
+    """
+    # Setup device and model
+    device = torch.device(config['device'] if torch.cuda.is_available() else "cpu")
     unet = unet.to(device)
-    optimizer = torch.optim.AdamW(params=unet.parameters(), lr=hyperparams['lr'])
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=hyperparams['epochs']*len(dataloader), eta_min=0.1*hyperparams['lr'])
 
-    min_loss = 50
+    # Setup optimizer and scheduler
+    total_steps = hyperparams['epochs'] * len(dataloader)
+    optimizer = torch.optim.AdamW(unet.parameters(), lr=hyperparams['lr'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=total_steps, eta_min=0.1 * hyperparams['lr']
+    )
+
+    # Training loop
+    best_loss = float('inf')
+    checkpoint_freq = hyperparams.get('checkpoint_freq', 50)
     start_time = time.time()
-    for i in range(1, hyperparams['epochs'] + 1):
-        s_t = time.time()
-        mean_loss = train_epoch_channels(dataloader=dataloader, 
-                                         unet=unet, 
-                                         diffused_model=diffused_model, 
-                                         optimizer=optimizer, 
-                                         scheduler=scheduler,
-                                         device=device, 
-                                         condition=meta['condition'], 
-                                         number_of_repetition=1)
-        logger.info(f'Epoch: {i}, mean loss: {mean_loss:.4f}, lr: {scheduler.get_last_lr()[0]:.6f}')
-
-        # Log metrics to wandb
-        wandb.log({"Train_loss": mean_loss,}, step=i)
-
-        if (mean_loss < min_loss):
-            min_loss = mean_loss
-            torch.save(unet.state_dict(), os.path.join(save_weights_path, 'unet_best.pth'))
-            logger.info(f'epoch {i} unet_best.pth has been saved.')
-        if (i % 50 == 0):
-            torch.save(unet.state_dict(), os.path.join(save_weights_path, f'unet_{i}.pth'))
-
-        e_t = time.time()
-        logger.info(f"Epoch Time Used: {e_t - s_t}s; Total Time Used: {e_t - start_time}s")
+    
+    for epoch in range(1, hyperparams['epochs'] + 1):
+        epoch_start = time.time()
+        
+        # Train one epoch
+        avg_loss = train_epoch(
+            dataloader=dataloader,
+            unet=unet,
+            diffusion_scheduler=diffusion_scheduler,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            device=device,
+            use_conditions=config['condition'],
+            num_repetitions=1,
+        )
+        
+        # Logging
+        current_lr = scheduler.get_last_lr()[0]
+        logger.info(
+            f'Epoch: {epoch}/{hyperparams["epochs"]}, '
+            f'Loss: {avg_loss:.4f}, LR: {current_lr:.6f}'
+        )
+        wandb.log({"train_loss": avg_loss, "learning_rate": current_lr}, step=epoch)
+        
+        # Save best model
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            best_path = os.path.join(save_dir, 'unet_best.pth')
+            torch.save(unet.state_dict(), best_path)
+            logger.info(f'Epoch {epoch}: New best model saved (loss: {avg_loss:.4f})')
+        
+        # Periodic checkpoints
+        if epoch % checkpoint_freq == 0:
+            checkpoint_path = os.path.join(save_dir, f'unet_epoch_{epoch}.pth')
+            torch.save(unet.state_dict(), checkpoint_path)
+            logger.info(f'Checkpoint saved: unet_epoch_{epoch}.pth')
+        
+        # Time tracking
+        epoch_time = time.time() - epoch_start
+        total_time = time.time() - start_time
+        logger.info(f"Epoch time: {epoch_time:.2f}s, Total time: {total_time:.2f}s")

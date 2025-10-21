@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import torch
 import wandb
@@ -8,7 +7,6 @@ from diffusers import DDPMScheduler
 from dotenv import load_dotenv
 from pathlib import Path
 from rich.logging import RichHandler
-from tqdm import tqdm
 from torch.utils.data import DataLoader
 from typing import Dict, Any
 
@@ -145,10 +143,10 @@ def main() -> None:
     # Train based on configuration
     if meta['vae_latent']:
         train_model(
-            meta=meta,
-            save_weights_path=save_weights_path,
+            config=meta,
+            save_dir=save_weights_path,
             dataloader=train_dataloader,
-            diffused_model=scheduler,
+            diffusion_scheduler=scheduler,
             unet=unet,
             hyperparams=hyperparams,
             logger=logger
