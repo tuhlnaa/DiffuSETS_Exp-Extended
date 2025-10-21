@@ -19,6 +19,28 @@ Heart disease remains a significant threat to human health. As a non-invasive di
 
 <br>
 
+## 🚀 Quick Start
+
+```bash
+# Create and activate conda environment
+conda create -n DiffuSETS python=3.11
+conda activate DiffuSETS
+
+# Clone the repository
+git clone https://github.com/tuhlnaa/DiffuSETS_Exp-Extended.git
+cd DiffuSETS_Exp-Extended
+
+# Install dependencies
+# Linux
+chmod +x ./script/Install_dependencies.sh
+./script/Install_dependencies.sh
+
+# Windows
+./script/Install_dependencies.bat
+```
+
+<br>
+
 ## Inference
 
 Run inference accessing OpenAI api (more flexible):
@@ -87,7 +109,7 @@ Below is a example of settings with detailed explanation, you can alter it to me
         "dataset_path": "./prerequisites/mimic_vae_lite.pt", 
         "@dataset_path": "path to mimic_vae.pt (dictdataset) or the folder contains vae latents", 
 
-        "checkpoints_dir": "./checkpoints", 
+        "output_dir": "./checkpoints", 
 
         "vae_path": "./prerequisites/vae_model.pth", 
         "@vae_path": "ALWAYS need to be specified no matter whether generating latent or not", 

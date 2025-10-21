@@ -13,10 +13,6 @@ conda install -c conda-forge gcc -y
 echo "Installing gxx..."
 conda install -c conda-forge gxx -y
 
-# Install libsndfile (audio processing)
-echo "Installing libsndfile..."
-conda install -c conda-forge libsndfile -y
-
 while read line; do
   # Skip empty lines and comments
   if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then

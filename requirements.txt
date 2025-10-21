@@ -3,3 +3,8 @@ diffusers==0.35.1
 ecg_plot==0.2.8
 openai==1.109
 python_dotenv==1.1.1
+wandb==0.22.2
+clearml==2.0.2
+omegaconf==2.3.0
+rich==14.2.0
+pandas==2.3.3

@@ -37,11 +37,11 @@ def main():
     hyperparams = config['hyper_para']
 
     k_max = 0
-    for item in os.listdir(roots['checkpoints_dir']):
+    for item in os.listdir(roots['output_dir']):
         if meta['exp_type'] + "_" in item:
             k = int(item.split('_')[-1]) 
             k_max = k if k > k_max else k_max
-    save_weights_path = os.path.join(roots['checkpoints_dir'], f"{meta['exp_type']}_{k_max + 1}")
+    save_weights_path = os.path.join(roots['output_dir'], f"{meta['exp_type']}_{k_max + 1}")
 
     try:
         os.makedirs(save_weights_path)

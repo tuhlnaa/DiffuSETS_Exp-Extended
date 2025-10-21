@@ -118,7 +118,7 @@ def main() -> None:
     hyperparams = config['hyper_para']
     
     # Setup experiment directory
-    checkpoints_root = Path(dependencies['checkpoints_dir'])
+    checkpoints_root = Path(dependencies['output_dir'])
     save_weights_path = get_next_experiment_dir(checkpoints_root, meta['exp_type'])
     
     # Setup logging

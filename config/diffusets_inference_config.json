@@ -9,7 +9,7 @@
 
     "dependencies": {
         "dataset_path": "./checkpoints/mimic_vae_0_new.pt",
-        "checkpoints_dir": "./checkpoints", 
+        "output_dir": "./output", 
         "vae_path": "./checkpoints/vae_model.pth"
     },
 
