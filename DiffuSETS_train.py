@@ -29,29 +29,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_next_experiment_dir(output_root: str, exp_name: str, exp_type: str) -> Path:
-    """Find the next available experiment directory number."""
-    output_root = Path(output_root)
-    if not output_root.exists():
-        output_root.mkdir(parents=True, exist_ok=True)
-    
-    max_idx = 0
-    prefix = f"{exp_type}_"
-    
-    for item in output_root.iterdir():
-        if item.is_dir() and item.name.startswith(prefix):
-            try:
-                idx = int(item.name.split('_')[-1])
-                max_idx = max(max_idx, idx)
-            except (ValueError, IndexError):
-                continue
-    
-    next_dir = output_root / f"{exp_name}_{exp_type}_{max_idx + 1}"
-    next_dir.mkdir(parents=True, exist_ok=True)
-    
-    return next_dir
-
-
 def build_unet(hyperparams: Dict[str, Any], meta: Dict[str, Any]) -> torch.nn.Module:
     """Build and return the appropriate UNet model."""
     use_vae_latent = meta['vae_latent']
@@ -111,17 +88,18 @@ def main() -> None:
     config = create_argument_parser()
     init_seeds(seed=42)
 
-    wandb.init(project="DiffuSETS", group="Training", entity=None)
-    wandb.run.name = "Experiment 1 V2"
-
     # Extract configuration sections
     meta = config['meta']
     dependencies = config['dependencies']
     hyperparams = config['hyper_para']
     
+    wandb.init(project="DiffuSETS", group="Training", entity=None)
+    wandb.run.name = meta["exp_name"]
+
     # Setup experiment directory
-    save_weights_path = get_next_experiment_dir(dependencies['output_dir'], meta['exp_name'], meta['exp_type'])
-    
+    save_path = Path(dependencies['output_dir']) / f"{meta['exp_name']}_{meta['exp_type']}"
+    save_path.mkdir(parents=True, exist_ok=True)
+
     # Setup logging
     logger.info(f"Experiment metadata: {meta}")
     logger.info(f"Hyperparameters: {hyperparams}")
@@ -144,7 +122,7 @@ def main() -> None:
     if meta['vae_latent']:
         train_model(
             config=meta,
-            save_dir=save_weights_path,
+            save_dir=save_path,
             dataloader=train_dataloader,
             diffusion_scheduler=scheduler,
             unet=unet,
@@ -160,7 +138,7 @@ def main() -> None:
         
         train_model_novae(
             meta=meta,
-            save_weights_path=save_weights_path,
+            save_weights_path=save_path,
             dataloader=train_dataloader,
             diffused_model=scheduler,
             unet=unet,
