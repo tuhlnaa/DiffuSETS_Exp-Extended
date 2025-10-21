@@ -17,7 +17,7 @@ from rich import box, print
 from typing import Any, Dict, Union
 
 
-def init_seeds(seed: int = 0, cuda_deterministic: bool = True) -> None:
+def init_seeds(seed: int = 42, cuda_deterministic: bool = True) -> None:
     """Initialize random seeds for reproducibility.
     
     Args:

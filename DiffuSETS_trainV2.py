@@ -36,15 +36,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def get_next_experiment_dir(checkpoints_root: Path, exp_type: str) -> Path:
+def get_next_experiment_dir(output_root: Path, exp_name: str, exp_type: str) -> Path:
     """Find the next available experiment directory number."""
-    if not checkpoints_root.exists():
-        checkpoints_root.mkdir(parents=True, exist_ok=True)
+    if not output_root.exists():
+        output_root.mkdir(parents=True, exist_ok=True)
     
     max_idx = 0
     prefix = f"{exp_type}_"
     
-    for item in checkpoints_root.iterdir():
+    for item in output_root.iterdir():
         if item.is_dir() and item.name.startswith(prefix):
             try:
                 idx = int(item.name.split('_')[-1])
@@ -52,7 +52,7 @@ def get_next_experiment_dir(checkpoints_root: Path, exp_type: str) -> Path:
             except (ValueError, IndexError):
                 continue
     
-    next_dir = checkpoints_root / f"{exp_type}_{max_idx + 1}"
+    next_dir = output_root / f"{exp_name}_{exp_type}_{max_idx + 1}"
     next_dir.mkdir(parents=True, exist_ok=True)
     
     return next_dir
@@ -107,7 +107,7 @@ def main() -> None:
     """Main training entry point."""
     args = parse_args()
     config = load_config(args.config)
-    init_seeds()
+    init_seeds(seed=42)
 
     wandb.init(project="DiffuSETS", group="Training", entity=None)
     wandb.run.name = "Experiment 1 V2"
@@ -118,15 +118,13 @@ def main() -> None:
     hyperparams = config['hyper_para']
     
     # Setup experiment directory
-    checkpoints_root = Path(dependencies['output_dir'])
-    save_weights_path = get_next_experiment_dir(checkpoints_root, meta['exp_type'])
+    save_weights_path = get_next_experiment_dir(dependencies['output_dir'], meta['exp_name'], meta['exp_type'])
     
     # Setup logging
     logger.info(f"Experiment metadata: {meta}")
     logger.info(f"Hyperparameters: {hyperparams}")
     
     # Load dataset
-    #train_dataset = DictDataset(dataset_path)
     dataset_path = Path(dependencies['dataset_path'])
     train_dataset = MIMIC_IV_ECG_VAE_Dataset(dataset_path, subset_proportion=0.005)
     train_dataloader = DataLoader(

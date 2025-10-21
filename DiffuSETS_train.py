@@ -65,8 +65,7 @@ def main():
 
     # Load dataset
     dataset_path = Path(roots['dataset_path'])
-    #train_dataset = DictDataset(dataset_path)
-    train_dataset = MIMIC_IV_ECG_VAE_Dataset(dataset_path, subset_proportion=0.005)
+    train_dataset = MIMIC_IV_ECG_VAE_Dataset(dataset_path, subset_proportion=1.0)
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=hyperparams['batch_size'],
