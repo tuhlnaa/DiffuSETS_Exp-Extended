@@ -13,6 +13,124 @@ from torch.utils.data import DataLoader
 from typing import Dict, Any
 
 
+def _prepare_conditions(label: Dict[str, Any], device: torch.device) -> Dict[str, torch.Tensor]:
+    """Prepare conditional inputs for the model.
+    
+    Args:
+        label: Dictionary containing 'gender', 'age', and 'hr' keys
+        device: Target device
+        
+    Returns:
+        Dictionary of condition tensors, each of shape (B, 1, 1)
+    """
+    # Gender encoding: 'M' -> 1, otherwise -> 0
+    gender = torch.tensor(
+        [1 if g == 'M' else 0 for g in label['gender']], 
+        dtype=torch.float32,
+        device=device
+    ).unsqueeze(1).unsqueeze(2)  # (B, 1, 1)
+
+    # Age and heart rate
+    age = label['age'].unsqueeze(1).unsqueeze(2).to(device)
+    hr = label['hr'].to(torch.float32).unsqueeze(1).unsqueeze(2).to(device)
+
+    return {
+        'gender': gender,
+        'age': age,
+        'heart_rate': hr,  # Consistent naming with underscore
+    }
+
+
+def _prepare_text_embeddings(text_embed: np.ndarray, device: torch.device) -> torch.Tensor:
+    """Convert text embeddings to tensor format.
+    
+    Args:
+        text_embed: Text embeddings array of shape (Batch, Dimension)
+        device: Target device
+        
+    Returns:
+        Tensor of shape (D, 1, B)
+    """
+    text_embed = torch.from_numpy(text_embed).float()
+    text_embed = text_embed.t().unsqueeze(1)  # (D, 1, B)
+    return text_embed.to(device)
+
+
+def train_epoch(
+    dataloader: DataLoader,
+    unet: nn.Module,
+    diffusion_scheduler: Any,
+    optimizer: Optimizer,
+    scheduler: LRScheduler,
+    device: torch.device,
+    use_conditions: bool = False,
+    num_repetitions: int = 1,
+) -> float:
+    """Train for one epoch.
+    
+    Args:
+        dataloader: Training data loader
+        unet: U-Net model
+        diffusion_scheduler: Diffusion noise scheduler
+        optimizer: Optimizer instance
+        scheduler: Learning rate scheduler
+        device: Training device
+        use_conditions: Whether to use conditional inputs
+        num_repetitions: Number of times to repeat the epoch
+        
+    Returns:
+        Average loss over the epoch
+    """
+    unet.train()
+    total_loss = 0.0
+    num_batches = 0
+
+    for _ in range(num_repetitions):
+        for data, label in dataloader:
+            # Move data to device
+            latent = data.to(device)
+            batch_size = latent.shape[0]
+
+            # Prepare text embeddings
+            text_embed = _prepare_text_embeddings(
+                np.array(label['text_embed']), device
+            )
+
+            # Sample random timesteps (with replacement - samples can repeat)
+            max_timesteps = diffusion_scheduler.config.num_train_timesteps
+            timesteps = torch.randint(1, max_timesteps - 1, (batch_size,)).to(device)
+
+            # Alternative: sample without replacement (all timesteps unique within batch)
+            # timesteps = torch.randperm(max_timesteps - 2)[:batch_size] + 1
+            # timesteps = timesteps.to(device)
+
+            # Add noise to latents
+            noise = torch.randn_like(latent).to(device)
+            noisy_latent = diffusion_scheduler.add_noise(latent, noise, timesteps).to(device)
+
+            # Prepare conditions if needed
+            if use_conditions:
+                conditions = _prepare_conditions(label, device)
+                # Forward pass
+                noise_pred = unet(noisy_latent, timesteps, text_embed, conditions)
+            else:
+                noise_pred = unet(noisy_latent, timesteps, text_embed)
+
+            # Compute loss (mean MSE per sample)
+            loss = F.mse_loss(noise_pred, noise, reduction='sum') / batch_size
+            
+            # Optimization step
+            optimizer.zero_grad()
+            loss.backward()  # Backward pass
+            optimizer.step()  # Update parameters
+            scheduler.step()
+
+            total_loss += loss.item()
+            num_batches += 1
+
+    return total_loss / num_batches
+
+
 def train_model(
     config: Dict[str, Any],
     save_dir: str,
@@ -89,115 +207,3 @@ def train_model(
         epoch_time = time.time() - epoch_start
         total_time = time.time() - start_time
         logger.info(f"Epoch time: {epoch_time:.2f}s, Total time: {total_time:.2f}s")
-
-
-def train_epoch(
-    dataloader: DataLoader,
-    unet: nn.Module,
-    diffusion_scheduler: Any,
-    optimizer: Optimizer,
-    scheduler: LRScheduler,
-    device: torch.device,
-    use_conditions: bool = False,
-    num_repetitions: int = 1,
-) -> float:
-    """Train for one epoch.
-    
-    Args:
-        dataloader: Training data loader
-        unet: U-Net model
-        diffusion_scheduler: Diffusion noise scheduler
-        optimizer: Optimizer instance
-        scheduler: Learning rate scheduler
-        device: Training device
-        use_conditions: Whether to use conditional inputs
-        num_repetitions: Number of times to repeat the epoch
-        
-    Returns:
-        Average loss over the epoch
-    """
-    loss_list = []
-    unet.train()
-    for _ in range(num_repetitions):
-        for data, label in dataloader:
-            # Prepare text embeddings
-            text_embed = _prepare_text_embeddings(
-                np.array(label['text_embed']), device
-            )
-
-            # Move latent to device
-            latent = data.to(device)
-
-            # t = torch.randperm(diffused_model.config.num_train_timesteps-2)[:latent.shape[0]] + 1 
-            # compatible with larger batch size
-            timesteps = torch.randint(1, diffusion_scheduler.config.num_train_timesteps - 1, (latent.shape[0],))
-
-            noise = torch.randn(latent.shape, device=latent.device)
-            noisy_latent = diffusion_scheduler.add_noise(latent, noise, timesteps)
-
-            noisy_latent = noisy_latent.to(device)
-            timesteps = timesteps.to(device)
-            noise = noise.to(device)
-
-            if use_conditions:
-                gender = []
-                age = label['age']
-                hr = label['hr']
-                conditions = {}
-            
-                for ch in label['gender']:
-                    if ch == 'M':
-                        gender.append(1)
-                    else:
-                        gender.append(0)
-                gender = np.array(gender)
-                gender = np.repeat(gender[:, np.newaxis], 1, axis=1)
-                gender = np.repeat(gender[:, :, np.newaxis], 1, axis=2)
-                gender = torch.Tensor(gender)
-                gender = gender.to(device)
-                conditions.update({'gender': gender})
-
-                age = np.array(age)
-                age = np.repeat(age[:, np.newaxis], 1, axis=1)
-                age = np.repeat(age[:, :, np.newaxis], 1, axis=2)
-                age = torch.Tensor(age)
-                age = age.to(device)
-                conditions.update({'age': age})
-
-                hr = np.array(hr)
-                hr = np.repeat(hr[:, np.newaxis], 1, axis=1)
-                hr = np.repeat(hr[:, :, np.newaxis], 1, axis=2)
-                hr = torch.Tensor(hr)
-                hr = hr.to(device)
-                conditions.update({'heart rate': hr})
-
-                for key in conditions:
-                    conditions[key] = conditions[key].to(device)
-                noise_estim = unet(noisy_latent, timesteps, text_embed, conditions)
-            else: 
-                noise_estim = unet(noisy_latent, timesteps, text_embed)
-
-            # Batchwise MSE loss 
-            loss = F.mse_loss(noise_estim, noise, reduction='sum').div(noise.size(0))
-            loss_list.append(loss.item())
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            scheduler.step()
-
-    return sum(loss_list) / len(loss_list)
-
-
-def _prepare_text_embeddings(text_embed: np.ndarray, device: torch.device) -> torch.Tensor:
-    """Convert text embeddings to tensor format.
-    
-    Args:
-        text_embed: Text embeddings array of shape (Batch, Dimension)
-        device: Target device
-        
-    Returns:
-        Tensor of shape (D, 1, B)
-    """
-    text_embed = torch.from_numpy(text_embed).float()
-    text_embed = text_embed.t().unsqueeze(1)  # (D, 1, B)
-    return text_embed.to(device)

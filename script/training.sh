@@ -2,7 +2,7 @@
 
 # Commands to run for DiffuSETS training on ECG datasets
 # Configuration file specifies model architecture, training parameters, and dataset paths
-# More useful information available with: python DiffuSETS_trainV2.py --help
+# More useful information available with: python DiffuSETS_train.py --help
 
 # Configuration
 EXPERIMENT_NAME="diffusets_ecg_training"
@@ -16,7 +16,7 @@ echo "Configuration file: $CONFIG_FILE"
 # Execute training
 echo ""
 echo "[EXECUTING] Training DiffuSETS model..."
-python DiffuSETS_trainV2.py $CONFIG_FILE
+python DiffuSETS_train.py $CONFIG_FILE
 
 echo ""
 echo "=== Training completed at $(date) ==="

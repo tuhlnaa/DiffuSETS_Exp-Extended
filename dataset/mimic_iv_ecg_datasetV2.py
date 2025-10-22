@@ -8,12 +8,22 @@ Usage:
 """
 
 import torch
+import logging
 import numpy as np
 
 from pathlib import Path
+from rich.logging import RichHandler
 from torch.utils.data import Dataset
 from typing import Tuple, Dict, Any
 from torch.utils.data import DataLoader
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s", 
+    handlers=[RichHandler()]
+)
+logger = logging.getLogger(__name__)
 
 
 class MIMIC_IV_ECG_VAE_Dataset(Dataset):
@@ -29,7 +39,7 @@ class MIMIC_IV_ECG_VAE_Dataset(Dataset):
         subset_proportion: Proportion of dataset to use (0.0 to 1.0). Default is 1.0 (use all data).
     """
    
-    def __init__(self, data_dir: str, subset_proportion: float = 1.0):
+    def __init__(self, data_dir: str, subset_proportion: float = 1.0, logger: Any = logger):
         self.data_dir = Path(data_dir)
         all_file_paths = sorted(self.data_dir.glob("*.npz"))
 
@@ -50,7 +60,7 @@ class MIMIC_IV_ECG_VAE_Dataset(Dataset):
         else:
             self.file_paths = all_file_paths
         
-        print(f"Using {len(self.file_paths)} out of {len(all_file_paths)} files ({subset_proportion*100:.1f}%)")
+        logger.info(f"Using {len(self.file_paths)} out of {len(all_file_paths)} files ({subset_proportion*100:.1f}%)")
 
    
     def __len__(self) -> int:
@@ -81,7 +91,7 @@ class MIMIC_IV_ECG_VAE_Dataset(Dataset):
        
         # Extract data tensor
         data = torch.from_numpy(npz_data['data']).float()
-       
+
         # Extract label fields
         label = {
             'text': str(npz_data['label_text'].item()),
@@ -131,86 +141,3 @@ def create_dataloader(
     print(f"Dataset samples: {len(dataset)}, DataLoader batches: {len(data_loader)}")
 
     return data_loader
-
-
-if __name__ == "__main__":
-    from torch.utils.data import DataLoader
-    
-    # Create dataset - automatically finds all .npz files
-    dataset = MIMIC_IV_ECG_VAE_Dataset(data_dir=r"./MIMIC-IV-ECG/mimic_vae_npz")
-    
-    print(f"\nDataset length: {len(dataset)}")
-    
-    # Test single sample
-    print("\n=== Testing single sample ===")
-    data, label = dataset[0]
-    print(f"Data shape: {data.shape}, dtype: {data.dtype}")
-    print(f"Data range: [{data.min():.4f}, {data.max():.4f}]")
-    print(f"\nLabel keys: {list(label.keys())}")
-    print(f"  text: {label['text']}")
-    print(f"  subject_id: {label['subject_id']}")
-    print(f"  hr: {label['hr']:.2f}")
-    print(f"  age: {label['age']}")
-    print(f"  gender: {label['gender']}")
-    print(f"  text_embed length: {len(label['text_embed'])}")
-    
-    # Test DataLoader
-    print("\n=== Testing DataLoader ===")
-    dataloader = DataLoader(
-        dataset,
-        batch_size=8,
-        shuffle=False,
-        num_workers=0,
-    )
-    
-    for batch_idx, (batch_data, batch_label) in enumerate(dataloader):
-        print(f"\nBatch {batch_idx}:")
-        print(f"  Data shape: {batch_data.shape}")
-        print(f"  text_embed type: {type(batch_label['text_embed'])}")
-        print(f"  text_embed length: {len(batch_label['text_embed'])}")
-        
-        # Demonstrate text_embed processing (from original code)
-        text_embed_array = np.array(batch_label['text_embed'])
-        print(f"  After np.array: {text_embed_array.shape}")
-        text_embed_transposed = text_embed_array.transpose(1, 0)
-        print(f"  After transpose: {text_embed_transposed.shape}")
-        
-        if batch_idx >= 1:
-            break
-    
-    print("\n✓ All tests passed!")
-
-
-"""
-Dataset length: 794372
-
-=== Testing single sample ===
-Data shape: torch.Size([4, 128]), dtype: torch.float32
-Data range: [-0.5937, 0.5459]
-
-Label keys: ['text', 'subject_id', 'hr', 'age', 'gender', 'text_embed']
-  text: Sinus rhythm|Possible right atrial abnormality|Borderline ECG
-  subject_id: 10000032
-  hr: 90.97
-  age: 52
-  gender: F
-  text_embed length: 1536
-
-=== Testing DataLoader ===
-
-Batch 0:
-  Data shape: torch.Size([8, 4, 128])
-  text_embed type: <class 'list'>
-  text_embed length: 1536
-  After np.array: (1536, 8)
-  After transpose: (8, 1536)
-
-Batch 1:
-  Data shape: torch.Size([8, 4, 128])
-  text_embed type: <class 'list'>
-  text_embed length: 1536
-  After np.array: (1536, 8)
-  After transpose: (8, 1536)
-
-✓ All tests passed!
-"""
